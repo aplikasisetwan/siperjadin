@@ -837,7 +837,7 @@
             </div>
         </div>
 
-        <!-- VIEW: REKAP PER NAMA (semua detail menjadi kolom terpisah) -->
+        <!-- VIEW: REKAP PER NAMA - urutan baru: biaya tiket berangkat dan pulang diletakkan diawal detail masing-masing -->
         <div x-show="view === 'rekapNama'" x-cloak>
             <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200">
@@ -860,8 +860,6 @@
                                 <th class="border-r px-1 py-1 text-right">Harian</th>
                                 <th class="border-r px-1 py-1 text-right">Repres.</th>
                                 <th class="border-r px-1 py-1 text-right">Transp.</th>
-                                <th class="border-r px-1 py-1 text-right">Tiket Berangkat</th>
-                                <th class="border-r px-1 py-1 text-right">Tiket Pulang</th>
                                 <th class="border-r px-1 py-1 text-right">Taksi</th>
                                 <th class="border-r px-1 py-1 text-right">Hotel (Biaya)</th>
                                 <!-- Detail Hotel: 7 kolom -->
@@ -872,6 +870,8 @@
                                 <th class="border-r px-1 py-1 text-left">No Kamar</th>
                                 <th class="border-r px-1 py-1 text-left">Email</th>
                                 <th class="border-r px-1 py-1 text-left">Telepon</th>
+                                <!-- Biaya Tiket Berangkat (diletakkan sebelum detail tiket berangkat) -->
+                                <th class="border-r px-1 py-1 text-right">Biaya Tiket Berangkat</th>
                                 <!-- Detail Tiket Berangkat: 8 kolom -->
                                 <th class="border-r px-1 py-1 text-left">Tgl Berangkat</th>
                                 <th class="border-r px-1 py-1 text-left">Maskapai</th>
@@ -881,6 +881,8 @@
                                 <th class="border-r px-1 py-1 text-left">No Tempat Duduk</th>
                                 <th class="border-r px-1 py-1 text-left">Bandara Keberangkatan</th>
                                 <th class="border-r px-1 py-1 text-left">Bandara Kedatangan</th>
+                                <!-- Biaya Tiket Pulang (diletakkan sebelum detail tiket pulang) -->
+                                <th class="border-r px-1 py-1 text-right">Biaya Tiket Pulang</th>
                                 <!-- Detail Tiket Pulang: 8 kolom -->
                                 <th class="border-r px-1 py-1 text-left">Tgl Pulang</th>
                                 <th class="border-r px-1 py-1 text-left">Maskapai</th>
@@ -921,8 +923,6 @@
                                         <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaHarian || 0) * (item.jmlHariHarian || 0))"></td>
                                         <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaRepresentatif || 0) * (item.jmlHariRepresentatif || 0))"></td>
                                         <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTransportasi || 0) * (item.jmlTransportasi || 0))"></td>
-                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTiketBerangkat || 0) * (item.jmlTiketBerangkat || 0))"></td>
-                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTiketPulang || 0) * (item.jmlTiketPulang || 0))"></td>
                                         <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTaksi || 0) * (item.jmlTaksi || 0))"></td>
                                         <td class="border-r px-1 py-0.5 text-right text-slate-500">
                                             <span x-text="formatCurrency(getHotelValue(item, doc))"></span>
@@ -936,6 +936,8 @@
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.noKamar || '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.email || '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.telepon || '-'"></td>
+                                        <!-- Biaya Tiket Berangkat -->
+                                        <td class="border-r px-1 py-0.5 text-right text-purple-700 font-bold" x-text="formatCurrency((item.hargaTiketBerangkat || 0) * (item.jmlTiketBerangkat || 0))"></td>
                                         <!-- Detail Tiket Berangkat -->
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.tanggal ? formatDate(item.detailTiketBerangkat.tanggal) : '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.maskapai || '-'"></td>
@@ -945,6 +947,8 @@
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.noTempatDuduk || '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.bandaraKeberangkatan || '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.bandaraKedatangan || '-'"></td>
+                                        <!-- Biaya Tiket Pulang -->
+                                        <td class="border-r px-1 py-0.5 text-right text-pink-700 font-bold" x-text="formatCurrency((item.hargaTiketPulang || 0) * (item.jmlTiketPulang || 0))"></td>
                                         <!-- Detail Tiket Pulang -->
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.tanggal ? formatDate(item.detailTiketPulang.tanggal) : '-'"></td>
                                         <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.maskapai || '-'"></td>
