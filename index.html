@@ -2,237 +2,1320 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>SI Perjalanan Dinas - Profesional</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi SI Perjalanan Dinas</title>
+    <!-- Tailwind CSS untuk Styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js untuk Logika Reactive -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <style>
         [x-cloak] { display: none !important; }
         @media print {
             .print-hidden { display: none !important; }
             body { background-color: white; }
         }
-        @page { size: 330mm 215mm; margin: 8mm; }
-        @page portrait-folio { size: 215mm 330mm; margin: 8mm; }
+        /* Pengaturan Kertas F4 Indonesia (Folio) */
+        @page { size: 330mm 215mm; margin: 8mm; } /* Default Landscape untuk SI Utama */
+        @page portrait-folio {
+            size: 215mm 330mm;
+            margin: 8mm;
+        }
         .print-checklist-container, .print-stat-container { page: portrait-folio; }
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.75rem;
-            line-height: 1.4;
-        }
-        .data-table th,
-        .data-table td {
-            border: 1px solid #e2e8f0;
-            padding: 0.5rem 0.75rem;
-            vertical-align: top;
-        }
-        .data-table th {
-            background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
-            font-weight: 700;
-            color: #1e293b;
-            text-transform: uppercase;
-            font-size: 0.7rem;
-            letter-spacing: 0.5px;
-        }
-        .data-table tbody tr:hover {
-            background-color: #fef9e3;
-            transition: background 0.2s ease;
-        }
-        .super-wide-table {
-            min-width: 2800px;
-        }
-        .overflow-x-auto {
-            -webkit-overflow-scrolling: touch;
-            border-radius: 0.75rem;
-        }
-        .card {
-            background: white;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
-            overflow: hidden;
-            border: 1px solid #eef2f6;
-        }
-        .card-header {
-            background-color: #fafcff;
-            border-bottom: 1px solid #eef2f6;
-            padding: 0.75rem 1.5rem;
-        }
-        input, select, textarea {
-            border: 1px solid #cbd5e1;
-            border-radius: 0.5rem;
-            padding: 0.375rem 0.75rem;
-            background-color: white;
-        }
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: #3b82f6;
-            ring: 2px solid #93c5fd;
+        .stat-table th, .stat-table td { border: 1px solid black; }
+        /* Untuk tampilan teks di tabel rekap */
+        .rekap-table td, .rekap-table th {
+            white-space: nowrap;
+            padding: 4px 6px;
+            font-size: 10px;
         }
     </style>
     <script>
-        // Konfigurasi Firebase (sesuaikan dengan milik Anda)
-        const firebaseConfig = {
-            apiKey: "AIzaSyClW_G243I40Rt3jTmHAFdtrUN-pbFy8Bc",
-            authDomain: "si-perjalanan-dinas.firebaseapp.com",
-            databaseURL: "https://si-perjalanan-dinas-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "si-perjalanan-dinas",
-            storageBucket: "si-perjalanan-dinas.firebasestorage.app",
-            messagingSenderId: "246828157898",
-            appId: "1:246828157898:web:8c07e5129ad3dbcaff9d33",
-            measurementId: "G-C8KDQLLFL0"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const database = firebase.database();
-
-        const sanitizeId = (id) => {
-            if (!id || /[\.#\$\[\]]/.test(id)) {
-                return Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-            }
-            return id;
-        };
-
+        // Engine Penyimpanan Skala Besar (IndexedDB)
         const dbProvider = {
+            dbName: 'SI_Dinas_DB',
+            version: 8,
+            async open() {
+                return new Promise((res, rej) => {
+                    const req = indexedDB.open(this.dbName, this.version);
+                    req.onupgradeneeded = e => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('pegawai')) db.createObjectStore('pegawai', { keyPath: 'id' });
+                    };
+                    req.onsuccess = e => res(e.target.result);
+                    req.onerror = e => rej(req.error);
+                });
+            },
             async save(store, data) {
-                let id = data.id;
-                if (!id || /[\.#\$\[\]]/.test(id)) {
-                    id = sanitizeId(id);
-                    data.id = id;
-                }
-                await database.ref(`${store}/${id}`).set(data);
+                const db = await this.open();
+                const tx = db.transaction(store, 'readwrite');
+                tx.objectStore(store).put(data);
             },
             async getAll(store) {
-                const snap = await database.ref(store).once('value');
-                const d = snap.val();
-                return d ? Object.values(d) : [];
+                const db = await this.open();
+                const tx = db.transaction(store, 'readonly');
+                const req = tx.objectStore(store).getAll();
+                return new Promise(res => req.onsuccess = () => res(req.result));
             },
             async remove(store, id) {
-                const safeId = sanitizeId(id);
-                await database.ref(`${store}/${safeId}`).remove();
+                const db = await this.open();
+                const tx = db.transaction(store, 'readwrite');
+                tx.objectStore(store).delete(id);
             }
         };
     </script>
 </head>
-<body class="bg-slate-100 font-sans min-h-screen" x-data="app()" x-init="init()" x-cloak>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen" x-data="siApp()" x-init="init()">
 
-    <!-- Navigation -->
-    <nav x-show="currentUser && view !== 'auth' && view !== 'admin'" class="bg-blue-800 text-white shadow-md print-hidden sticky top-0 z-10">
+    <!-- Top Navigation -->
+    <nav class="bg-blue-800 text-white shadow-md print-hidden">
         <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex flex-wrap justify-between items-center py-3">
-                <div class="flex items-center space-x-2"><span class="font-bold text-lg tracking-wide">SI Perjalanan Dinas</span></div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button @click="resetForm(); view = 'form'" :class="view === 'form' ? 'bg-blue-900' : 'hover:bg-blue-700'" class="px-3 py-1.5 rounded-md text-sm font-medium">Input</button>
-                    <button @click="view = 'list'" :class="view === 'list' ? 'bg-blue-900' : 'hover:bg-blue-700'" class="px-3 py-1.5 rounded-md text-sm font-medium">Rekap Data</button>
-                    <button @click="view = 'rekapNama'" :class="view === 'rekapNama' ? 'bg-blue-900' : 'hover:bg-blue-700'" class="px-3 py-1.5 rounded-md text-sm font-medium">Rekap Nama</button>
-                    <button @click="view = 'pegawai'" :class="view === 'pegawai' ? 'bg-blue-900' : 'hover:bg-blue-700'" class="px-3 py-1.5 rounded-md text-sm font-medium">Pegawai</button>
-                    <template x-if="currentUser && currentUser.isAdmin">
-                        <button @click="loadAllUsers(); view = 'admin'" :class="view === 'admin' ? 'bg-blue-900' : 'hover:bg-blue-700'" class="px-3 py-1.5 rounded-md text-sm font-medium">Kelola User</button>
-                    </template>
-                    <div class="ml-3 flex items-center gap-2 bg-blue-900/40 px-3 py-1.5 rounded-md text-sm"><span x-text="currentUser?.nama || currentUser?.email"></span></div>
-                    <button @click="logout()" class="bg-red-700 hover:bg-red-800 px-3 py-1.5 rounded-md text-sm font-medium">Logout</button>
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <i data-lucide="file-text" class="h-6 w-6 mr-2"></i>
+                    <span class="font-bold text-lg hidden sm:block">Aplikasi SI Perjalanan Dinas</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button @click="resetForm(); view = 'form'" :class="view === 'form' ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-700'" class="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        <i data-lucide="plus" class="h-4 w-4 mr-1"></i> Input Baru
+                    </button>
+                    <button @click="view = 'list'" :class="view === 'list' ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-700'" class="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        <i data-lucide="list" class="h-4 w-4 mr-1"></i> Rekap Data
+                    </button>
+                    <button @click="view = 'rekapNama'" :class="view === 'rekapNama' ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-700'" class="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        <i data-lucide="layout-list" class="h-4 w-4 mr-1"></i> Rekap Per Nama
+                    </button>
+                    <button @click="view = 'rekapStatistik'" :class="view === 'rekapStatistik' ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-700'" class="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        <i data-lucide="bar-chart-3" class="h-4 w-4 mr-1"></i> Rekap Statistik
+                    </button>
+                    <button @click="view = 'pegawai'" :class="view === 'pegawai' ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-700'" class="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        <i data-lucide="users" class="h-4 w-4 mr-1"></i> Data Pegawai
+                    </button>
                 </div>
             </div>
         </div>
     </nav>
 
-    <main class="max-w-full mx-auto py-4 px-4 sm:px-6 lg:px-8" x-show="currentUser && view !== 'auth' && view !== 'admin'">
+    <!-- Main Content -->
+    <main class="max-w-full mx-auto py-3 px-4 sm:px-6 lg:px-8">
 
-        <!-- PEGAWAI -->
+        <!-- VIEW: DATA PEGAWAI -->
         <div x-show="view === 'pegawai'" x-cloak>
-            <div class="card"><div class="card-header"><h2 class="text-xl font-bold">Data Pegawai</h2></div>
-            <div class="p-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-1 bg-slate-50 p-4 rounded-xl border"><h3 class="font-semibold mb-3" x-text="editPegawaiIndex !== null ? 'Edit Pegawai' : 'Tambah Pegawai'"></h3>
-                <div class="space-y-3"><div><label class="block text-sm font-medium">Nama Lengkap</label><input type="text" x-model="formPegawai.nama" class="w-full"></div><div><label class="block text-sm font-medium">Jabatan</label><input type="text" x-model="formPegawai.jabatan" class="w-full"></div><div><label class="block text-sm font-medium">AKD</label><input type="text" x-model="formPegawai.akd" class="w-full"></div><div><label class="block text-sm font-medium">Bank</label><input type="text" x-model="formPegawai.bank" list="list-bank" class="w-full"></div><datalist id="list-bank"><template x-for="b in banks" :key="b"><option :value="b"></option></template></datalist><div><label class="block text-sm font-medium">Nomor Rekening</label><input type="text" x-model="formPegawai.rekening" class="w-full"></div><div class="flex gap-2 pt-2"><button @click="savePegawai()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700" x-text="editPegawaiIndex !== null ? 'Perbarui' : 'Simpan'"></button><button x-show="editPegawaiIndex !== null" @click="editPegawaiIndex = null; formPegawai = { nama:'', bank:'', rekening:'', jabatan:'', akd:'' }" class="bg-slate-200 py-2 px-4 rounded-lg">Batal</button></div></div></div>
-                <div class="lg:col-span-2 overflow-x-auto"><table class="data-table"><thead><tr><th>Nama</th><th>Jabatan</th><th>AKD</th><th>Bank</th><th>Rekening</th><th class="text-center">Aksi</th></tr></thead><tbody><template x-for="(p, idx) in pegawaiList" :key="idx"><td><td x-text="p.nama"></td><td x-text="p.jabatan"></td><td x-text="p.akd"></td><td x-text="p.bank"></td><td x-text="p.rekening"></td><td class="text-center"><button @click="editPegawai(idx)" class="text-amber-600 hover:bg-amber-50 p-1 rounded">Edit</button> <button @click="deletePegawai(idx)" class="text-red-600 hover:bg-red-50 p-1 rounded">Hapus</button></td></tr></template></tbody></table></div>
-            </div></div>
+            <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
+                <div class="bg-slate-50 px-6 py-2 border-b border-slate-200">
+                    <h2 class="text-xl font-bold text-slate-800">Master Data Pegawai</h2>
+                </div>
+                <div class="p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="lg:col-span-1">
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h3 class="font-semibold mb-2" x-text="editPegawaiIndex !== null ? 'Edit Data Pegawai' : 'Tambah Pegawai Baru'"></h3>
+                            <div class="space-y-2">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Nama Lengkap</label>
+                                    <input type="text" x-model="formPegawai.nama" class="w-full p-1.5 border rounded-md">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Jabatan</label>
+                                    <input type="text" x-model="formPegawai.jabatan" class="w-full p-1.5 border rounded-md">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Nama AKD</label>
+                                    <input type="text" x-model="formPegawai.akd" class="w-full p-1.5 border rounded-md">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Nama Bank</label>
+                                    <input type="text" x-model="formPegawai.bank" list="list-bank" class="w-full p-1.5 border rounded-md" placeholder="Cari/Pilih Bank...">
+                                </div>
+                                <datalist id="list-bank">
+                                    <template x-for="b in banks" :key="b">
+                                        <option :value="b"></option>
+                                    </template>
+                                </datalist>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Nomor Rekening</label>
+                                    <input type="text" x-model="formPegawai.rekening" class="w-full p-1.5 border rounded-md">
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="savePegawai()" class="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700" x-text="editPegawaiIndex !== null ? 'Perbarui Pegawai' : 'Simpan Pegawai'"></button>
+                                    <button x-show="editPegawaiIndex !== null" @click="editPegawaiIndex = null; formPegawai = { nama: '', bank: '', rekening: '', jabatan: '', akd: '' }" class="bg-slate-200 text-slate-700 py-2 px-4 rounded-md hover:bg-slate-300">Batal</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 border rounded-lg overflow-hidden">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Nama</th>
+                                    <th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Jabatan</th>
+                                    <th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">AKD</th>
+                                    <th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Bank</th>
+                                    <th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Rekening</th>
+                                    <th class="px-4 py-2 text-center w-16">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-slate-200">
+                                <template x-for="(p, index) in pegawaiList" :key="index">
+                                    <tr>
+                                        <td class="px-4 py-1.5 text-sm font-medium" x-text="p.nama"></td>
+                                        <td class="px-4 py-1.5 text-sm text-slate-600" x-text="p.jabatan"></td>
+                                        <td class="px-4 py-1.5 text-sm text-slate-600" x-text="p.akd"></td>
+                                        <td class="px-4 py-1.5 text-sm text-slate-600" x-text="p.bank"></td>
+                                        <td class="px-4 py-1.5 text-sm font-mono text-slate-600" x-text="p.rekening"></td>
+                                        <td class="px-4 py-1.5 text-center whitespace-nowrap">
+                                            <button @click="editPegawai(index)" class="text-amber-500 hover:bg-amber-50 p-1 rounded">
+                                                <i data-lucide="edit-3" class="h-4 w-4"></i>
+                                            </button>
+                                            <button @click="deletePegawai(index)" class="text-red-500 hover:bg-red-50 p-1 rounded">
+                                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- FORM INPUT (sama seperti sebelumnya, tidak diubah detail) -->
-        <div x-show="view === 'form'" x-cloak><div class="card"><div class="card-header"><h2 class="text-xl font-bold" x-text="editIndex !== null ? 'Edit Dokumen SI' : 'Input Dokumen SI'"></h2></div>
-        <form @submit.prevent="submitForm()" class="p-5 space-y-5">
-            <!-- sama seperti kode sebelumnya, di sini saya singkat agar file tidak terlalu panjang namun fungsi tetap lengkap -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">...</div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-blue-50/40 rounded-xl">...</div>
-            <div class="overflow-x-auto border rounded-xl"><table class="data-table min-w-[800px]"><thead>...</thead><tbody>...</tbody></table></div>
-            <div class="flex justify-end gap-3"><button type="button" x-show="editIndex!==null" @click="resetForm(); view='list'" class="bg-slate-200 px-6 py-2 rounded-lg">Batal</button><button type="submit" class="bg-blue-600 text-white px-8 py-2 rounded-lg" x-text="editIndex!==null?'Update':'Simpan'"></button></div>
-        </form></div></div>
+        <!-- VIEW: FORM INPUT -->
+        <div x-show="view === 'form'" x-cloak>
+            <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
+                <div class="bg-slate-50 px-6 py-2 border-b border-slate-200">
+                    <h2 class="text-xl font-bold" x-text="editIndex !== null ? 'Edit Dokumen SI' : 'Input Dokumen SI Baru'"></h2>
+                </div>
+                <form @submit.prevent="submitForm()" class="p-4">
+                    <!-- Informasi Umum -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Jenis SI</label>
+                            <select x-model="formData.jenisSi" class="w-full p-1.5 border rounded-md">
+                                <option>GU</option><option>TU</option><option>KKPD</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Nomor SI</label>
+                            <input type="text" x-model="formData.nomorSi" class="w-full p-1.5 border rounded-md" required>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium mb-1">Kegiatan</label>
+                            <input type="text" x-model="formData.kegiatan" class="w-full p-1.5 border rounded-md">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium mb-1">Sub Kegiatan</label>
+                            <select x-model="formData.subKegiatan" class="w-full p-1.5 border rounded-md focus:ring-blue-500" required>
+                                <option value="">-- Pilih Sub Kegiatan --</option>
+                                <option value="Pembahasan Rancangan Peraturan Daerah">Pembahasan Rancangan Peraturan Daerah</option>
+                                <option value="Fasilitasi Penyusunan Penjelasan/Keterangan Naskah Akademik">Fasilitasi Penyusunan Penjelasan/Keterangan Naskah Akademik</option>
+                                <option value="Penyusunan dan Pembahasan Program Pembentukan Peraturan Daerah">Penyusunan dan Pembahasan Program Pembentukan Peraturan Daerah</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Berangkat Dari</label>
+                                <input type="text" x-model="formData.asal" class="w-full p-1.5 text-sm border rounded-md focus:ring-1 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Tujuan (Kab/Kota)</label>
+                                <input type="text" x-model="formData.tujuan" class="w-full p-1.5 text-sm border rounded-md focus:ring-1 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Tgl Berangkat</label>
+                                <input type="date" x-model="formData.tglBerangkat" class="w-full p-1.5 text-sm border rounded-md focus:ring-1 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Tgl Kembali</label>
+                                <input type="date" x-model="formData.tglKembali" class="w-full p-1.5 text-sm border rounded-md focus:ring-1 focus:ring-blue-500">
+                            </div>
+                            <div class="flex flex-col justify-center items-center bg-blue-100/50 rounded-md border border-blue-200">
+                                <span class="text-[9px] font-bold text-blue-700 uppercase">Durasi</span>
+                                <span class="text-lg font-black text-blue-800" x-text="calculateDays(formData.tglBerangkat, formData.tglKembali)"></span>
+                                <span class="text-[9px] font-bold text-blue-700 uppercase">Hari</span>
+                            </div>
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium mb-1">Jenis Kegiatan</label>
+                            <select x-model="formData.jenisKegiatan" class="w-full p-1.5 border rounded-md focus:ring-blue-500 bg-amber-50 font-bold" required>
+                                <option value="-">-</option>
+                                <option value="Koordinasi dan Konsultasi">Koordinasi dan Konsultasi</option>
+                                <option value="Kunjungan Kerja">Kunjungan Kerja</option>
+                                <option value="Pansus">Pansus</option>
+                                <option value="Undangan">Undangan</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium mb-1">Acara</label>
+                            <input type="text" x-model="formData.acara" class="w-full p-1.5 border rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Tanggal Pengajuan</label>
+                            <input type="date" x-model="formData.tanggalPengajuan" class="w-full p-1.5 border rounded-md">
+                        </div>
+                    </div>
 
-        <!-- REKAP DATA (LIST) dengan audit trail -->
+                    <!-- Pengaturan Tarif Global & Keterangan -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 p-3 bg-blue-50/50 border border-blue-200 rounded-lg">
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-blue-700 uppercase">Uang Harian</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaHarian" @input="formData.items.forEach(i => i.hargaHarian = formData.defaultHargaHarian)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketHarian" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Keterangan Uang Harian">
+                            </div>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-blue-700 uppercase">Refresentatif</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaRepresentatif" @input="formData.items.forEach(i => i.hargaRepresentatif = formData.defaultHargaRepresentatif)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketRepresentatif" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Keterangan Refresentatif">
+                            </div>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-blue-700 uppercase">Transportasi</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaTransportasi" @input="formData.items.forEach(i => i.hargaTransportasi = formData.defaultHargaTransportasi)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketTransportasi" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Keterangan Transportasi">
+                            </div>
+                        </div>
+                        <!-- Tiket Berangkat -->
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-purple-700 uppercase">Tiket Berangkat</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaTiketBerangkat" @input="formData.items.forEach(i => i.hargaTiketBerangkat = formData.defaultHargaTiketBerangkat)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-purple-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketTiketBerangkat" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-purple-500" placeholder="Keterangan Tiket Berangkat">
+                            </div>
+                        </div>
+                        <!-- Tiket Pulang -->
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-pink-700 uppercase">Tiket Pulang</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaTiketPulang" @input="formData.items.forEach(i => i.hargaTiketPulang = formData.defaultHargaTiketPulang)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-pink-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketTiketPulang" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-pink-500" placeholder="Keterangan Tiket Pulang">
+                            </div>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-blue-700 uppercase">Taksi</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaTaksi" @input="formData.items.forEach(i => i.hargaTaksi = formData.defaultHargaTaksi)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketTaksi" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Keterangan Taksi">
+                            </div>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-blue-700 uppercase">Hotel</label>
+                            <div class="flex gap-1">
+                                <input type="number" x-model.number="formData.defaultHargaHotel" @input="formData.items.forEach(i => i.hargaHotel = formData.defaultHargaHotel)" class="w-24 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Tarif">
+                                <input type="text" x-model="formData.ketHotel" class="flex-1 p-1.5 text-xs border rounded-md focus:ring-1 focus:ring-blue-500" placeholder="Keterangan Hotel">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabel Item -->
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold mb-2">Rincian Perjalanan Dinas</h3>
+                        <div class="overflow-x-auto border rounded-lg">
+                            <table class="min-w-full divide-y divide-slate-200">
+                                <thead class="bg-slate-50 text-xs text-slate-500 uppercase">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left">Kode / Uraian</th>
+                                        <th class="px-4 py-2 text-left">Bank / Rekening</th>
+                                        <th class="px-4 py-2 text-right min-w-[550px]">Rincian Biaya</th>
+                                        <th class="px-4 py-2 text-left">Keterangan</th>
+                                        <th class="px-4 py-2 text-right bg-blue-50">Total</th>
+                                        <th class="px-4 py-2 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y">
+                                    <template x-for="(item, index) in formData.items" :key="index">
+                                        <tr class="hover:bg-slate-50 transition-colors">
+                                            <td class="px-4 py-2 align-top space-y-2">
+                                                <input type="text" x-model="item.kodeRekening" placeholder="Kode Rek" class="w-full p-1.5 text-sm border rounded" required>
+                                                <input type="text" x-model="item.namaRekening" placeholder="Nama Rekening Belanja" class="w-full p-1.5 text-sm border rounded" required>
+                                                
+                                                <!-- Dropdown Nama (Uraian) -->
+                                                <div class="flex flex-col gap-1">
+                                                    <div class="flex gap-1">
+                                                        <template x-if="!item.isManual">
+                                                            <div class="flex-1">
+                                                                <!-- Tampilan jika belum memilih nama -->
+                                                                <div x-show="!item.uraian">
+                                                                    <select x-model="item.uraian" @change="autofillPegawai(index); $nextTick(() => lucide.createIcons())" class="w-full p-1.5 text-sm border rounded bg-white focus:ring-blue-500" :required="!item.isManual && !item.uraian">
+                                                                        <option value="">-- Pilih Pegawai --</option>
+                                                                        <template x-for="p in getAvailablePegawai(index)" :key="p.nama">
+                                                                            <option :value="p.nama" x-text="p.nama"></option>
+                                                                        </template>
+                                                                    </select>
+                                                                </div>
+                                                                <!-- Tampilan jika nama sudah terpilih -->
+                                                                <div x-show="item.uraian" class="flex items-center justify-between w-full p-1.5 text-sm border rounded bg-blue-50 border-blue-200 font-bold text-blue-800">
+                                                                    <span x-text="item.uraian"></span>
+                                                                    <button type="button" @click="item.uraian = ''; item.namaBank = ''; item.nomorRekening = ''; item.jabatan = ''; item.akd = ''; $nextTick(() => lucide.createIcons())" class="text-rose-500 hover:text-rose-700 ml-2" title="Ganti Pegawai">
+                                                                        <i data-lucide="x-circle" class="h-4 w-4"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                        <template x-if="item.isManual">
+                                                            <input type="text" x-model="item.uraian" @input="autofillPegawai(index)" class="w-full p-1.5 text-sm border rounded" placeholder="Ketik Nama Baru..." required>
+                                                        </template>
+                                                        <button type="button" @click="item.isManual = !item.isManual; if(!item.isManual) item.uraian = ''; $nextTick(() => lucide.createIcons())" class="p-1.5 border rounded bg-slate-100 text-slate-600 hover:bg-slate-200" :title="item.isManual ? 'Pilih dari List' : 'Input Manual'">
+                                                            <i :data-lucide="item.isManual ? 'list' : 'plus'" class="h-4 w-4"></i>
+                                                        </button>
+                                                    </div>
+                                                    <button type="button" x-show="item.isManual && item.uraian && !pegawaiList.some(p => p.nama.toLowerCase() === item.uraian.toLowerCase())" 
+                                                            @click="quickSavePegawai(index)" 
+                                                            class="w-full py-1 text-[9px] bg-emerald-100 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-200 font-bold">
+                                                        SIMPAN KE DATA PEGAWAI
+                                                    </button>
+                                                </div>
+
+                                                <div class="grid grid-cols-2 gap-1 mt-1">
+                                                    <input type="text" x-model="item.jabatan" placeholder="Jabatan" class="p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white">
+                                                    <input type="text" x-model="item.akd" placeholder="Nama AKD" class="p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white">
+                                                </div>
+                                                <!-- Form Nomor SPPD -->
+                                                <div class="mt-2 p-2 bg-blue-50/50 rounded-md border border-blue-100 space-y-1">
+                                                    <p class="text-[9px] font-bold text-blue-700 uppercase tracking-tight">Nomor SPPD</p>
+                                                    <input type="text" x-model="item.noSppd" placeholder="Masukkan Nomor SPPD" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white">
+                                                </div>
+
+                <!-- Per-Person Checklist -->
+                <div class="mt-2 p-2 bg-emerald-50/50 rounded-md border border-emerald-100 space-y-1">
+                    <p class="text-[9px] font-bold text-emerald-700 uppercase tracking-tight">Dokumen Peserta</p>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        <template x-for="cItem in checklistItems.filter(i => i.isPerPerson)" :key="cItem.id">
+                            <div class="flex items-center justify-between border-b border-emerald-100/50 pb-1">
+                                <span class="text-[10px] text-slate-600 truncate flex-1 font-medium" x-text="cItem.label" :title="cItem.label"></span>
+                                <div class="flex items-center space-x-3 ml-2">
+                                    <label class="flex items-center space-x-1 cursor-pointer">
+                                        <input type="checkbox" 
+                                            @change="item.kelengkapan[cItem.id] = $event.target.checked ? 'ada' : null"
+                                            :checked="item.kelengkapan?.[cItem.id] === 'ada'"
+                                            class="h-3 w-3 text-emerald-600 rounded border-slate-300">
+                                        <span class="text-[9px] text-slate-500 font-bold">Ada</span>
+                                    </label>
+                                    <label class="flex items-center space-x-1 cursor-pointer">
+                                        <input type="checkbox" 
+                                            @change="item.kelengkapan[cItem.id] = $event.target.checked ? 'belum_ada' : null"
+                                            :checked="item.kelengkapan?.[cItem.id] === 'belum_ada'"
+                                            class="h-3 w-3 text-rose-600 rounded border-slate-300">
+                                        <span class="text-[9px] text-slate-500 font-bold">Belum</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Detail Hotel jika Invoice/Bill Guest Hotel ada -->
+                <div x-show="item.kelengkapan?.inv === 'ada'" class="mt-2 p-2 bg-blue-50/50 rounded-md border border-blue-100 space-y-1">
+                    <p class="text-[9px] font-bold text-blue-700 uppercase tracking-tight">Detail Hotel</p>
+                    <div class="grid grid-cols-2 gap-1">
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Nama Penginapan</label>
+                            <input type="text" x-model="item.detailHotel.nama" placeholder="Nama Hotel" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Alamat</label>
+                            <input type="text" x-model="item.detailHotel.alamat" placeholder="Alamat" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Tanggal Cek In</label>
+                            <input type="date" x-model="item.detailHotel.tglCekIn" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Tanggal Cek Out</label>
+                            <input type="date" x-model="item.detailHotel.tglCekOut" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Kamar</label>
+                            <input type="text" x-model="item.detailHotel.noKamar" placeholder="No Kamar" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Email</label>
+                            <input type="email" x-model="item.detailHotel.email" placeholder="Email" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Telepon</label>
+                            <input type="text" x-model="item.detailHotel.telepon" placeholder="Telepon" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detail Tiket Berangkat -->
+                <div x-show="item.kelengkapan?.tb === 'ada'" class="mt-2 p-2 bg-purple-50/50 rounded-md border border-purple-100 space-y-1">
+                    <p class="text-[9px] font-bold text-purple-700 uppercase tracking-tight">Detail Tiket Berangkat</p>
+                    <div class="grid grid-cols-2 gap-1">
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Tanggal Berangkat</label>
+                            <input type="date" x-model="item.detailTiketBerangkat.tanggal" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Nama Maskapai</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.maskapai" placeholder="Maskapai" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Kode Booking</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.kodeBooking" placeholder="Kode Booking" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Tiket</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.noTiket" placeholder="No Tiket" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Flight</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.noFlight" placeholder="No Flight" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Tempat Duduk</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.noTempatDuduk" placeholder="No Tempat Duduk" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Bandara Keberangkatan</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.bandaraKeberangkatan" placeholder="Bandara Keberangkatan" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Bandara Kedatangan</label>
+                            <input type="text" x-model="item.detailTiketBerangkat.bandaraKedatangan" placeholder="Bandara Kedatangan" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-purple-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detail Tiket Pulang -->
+                <div x-show="item.kelengkapan?.tp === 'ada'" class="mt-2 p-2 bg-pink-50/50 rounded-md border border-pink-100 space-y-1">
+                    <p class="text-[9px] font-bold text-pink-700 uppercase tracking-tight">Detail Tiket Pulang</p>
+                    <div class="grid grid-cols-2 gap-1">
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Tanggal Berangkat</label>
+                            <input type="date" x-model="item.detailTiketPulang.tanggal" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Nama Maskapai</label>
+                            <input type="text" x-model="item.detailTiketPulang.maskapai" placeholder="Maskapai" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Kode Booking</label>
+                            <input type="text" x-model="item.detailTiketPulang.kodeBooking" placeholder="Kode Booking" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Tiket</label>
+                            <input type="text" x-model="item.detailTiketPulang.noTiket" placeholder="No Tiket" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Flight</label>
+                            <input type="text" x-model="item.detailTiketPulang.noFlight" placeholder="No Flight" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">No Tempat Duduk</label>
+                            <input type="text" x-model="item.detailTiketPulang.noTempatDuduk" placeholder="No Tempat Duduk" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Bandara Keberangkatan</label>
+                            <input type="text" x-model="item.detailTiketPulang.bandaraKeberangkatan" placeholder="Bandara Keberangkatan" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-medium text-slate-500">Bandara Kedatangan</label>
+                            <input type="text" x-model="item.detailTiketPulang.bandaraKedatangan" placeholder="Bandara Kedatangan" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-pink-500">
+                        </div>
+                    </div>
+                </div>
+                                            </td>
+                                            <td class="px-4 py-2 align-top space-y-1">
+                                                <input type="text" x-model="item.namaBank" list="list-bank" placeholder="Bank" class="w-full p-1.5 text-sm border rounded bg-slate-50">
+                                                <input type="text" x-model="item.nomorRekening" placeholder="No Rek" class="w-full p-1.5 text-sm border rounded bg-slate-50">
+                                            </td>
+                                            <td class="px-4 py-2 align-top space-y-1">
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-slate-500">Uang Harian</span>
+                                                    <input type="number" x-model.number="item.hargaHarian" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlHariHarian" placeholder="Hari" class="w-12 p-1 border rounded text-center bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaHarian || 0) * (item.jmlHariHarian || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-slate-500">Uang Representatif</span>
+                                                    <input type="number" x-model.number="item.hargaRepresentatif" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlHariRepresentatif" placeholder="Hari" class="w-12 p-1 border rounded text-center bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaRepresentatif || 0) * (item.jmlHariRepresentatif || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-slate-500">Transportasi</span>
+                                                    <input type="number" x-model.number="item.hargaTransportasi" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlTransportasi" placeholder="Jml" class="w-12 p-1 border rounded text-center bg-white">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaTransportasi || 0) * (item.jmlTransportasi || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <!-- Tiket Berangkat -->
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-purple-600">Tiket Berangkat</span>
+                                                    <input type="number" x-model.number="item.hargaTiketBerangkat" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-purple-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlTiketBerangkat" placeholder="Jml" class="w-12 p-1 border rounded text-center bg-white">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaTiketBerangkat || 0) * (item.jmlTiketBerangkat || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <!-- Tiket Pulang -->
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-pink-600">Tiket Pulang</span>
+                                                    <input type="number" x-model.number="item.hargaTiketPulang" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-pink-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlTiketPulang" placeholder="Jml" class="w-12 p-1 border rounded text-center bg-white">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaTiketPulang || 0) * (item.jmlTiketPulang || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <div class="flex items-center text-xs space-x-1">
+                                                    <span class="w-32 whitespace-nowrap text-slate-500">Biaya Taksi</span>
+                                                    <input type="number" x-model.number="item.hargaTaksi" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-blue-500">
+                                                    <span class="text-slate-400">x</span>
+                                                    <input type="number" x-model.number="item.jmlTaksi" placeholder="Jml" class="w-12 p-1 border rounded text-center bg-white">
+                                                    <span class="text-slate-400">=</span>
+                                                    <input type="text" :value="formatCurrency((item.hargaTaksi || 0) * (item.jmlTaksi || 0))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                </div>
+                                                <div class="flex flex-col border-t mt-1 pt-1">
+                                                    <div class="flex items-center text-xs space-x-1">
+                                                        <span class="w-32 whitespace-nowrap text-slate-500">Biaya Hotel</span>
+                                                        <input type="number" x-model.number="item.hargaHotel" placeholder="Harga" class="flex-1 p-1 border rounded text-right bg-white focus:ring-1 focus:ring-blue-500">
+                                                        <span class="text-slate-400">x</span>
+                                                        <input type="number" x-model.number="item.jmlHariHotel" placeholder="Malam" class="w-12 p-1 border rounded text-center bg-white">
+                                                        <span class="text-slate-400">=</span>
+                                                        <input type="text" :value="formatCurrency(getHotelValue(item, formData))" class="w-28 p-1 border rounded text-right bg-slate-50 font-bold" readonly>
+                                                    </div>
+                                                    <label class="flex items-center justify-end text-[10px] mt-1 cursor-pointer">
+                                                        <input type="checkbox" x-model="item.isPenginapan30Persen" class="mr-1 h-3 w-3"> Tarif 30%
+                                                    </label>
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-2 align-top">
+                                                <textarea x-model="item.keterangan" class="w-full p-1.5 text-sm border rounded h-24 resize-none" placeholder="Keterangan..."></textarea>
+                                            </td>
+                                        <td class="px-4 py-2 align-top text-right font-bold bg-blue-50/50" x-text="formatCurrency(calculateItemTotal(item, formData))"></td>
+                                            <td class="px-4 py-2 text-center">
+                                                <button type="button" @click="removeItem(index)" class="text-red-500 hover:text-red-700">
+                                                    <i data-lucide="trash-2" class="h-5 w-5"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                    <!-- Tombol Tambah Baris di Baris Terakhir -->
+                                    <tr>
+                                        <td colspan="6" class="px-4 py-3 bg-slate-50/50">
+                                            <button type="button" @click="addItem(); $nextTick(() => lucide.createIcons())" 
+                                                    class="flex items-center justify-center w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 font-bold hover:bg-blue-50 hover:border-blue-400 transition-all shadow-sm">
+                                                <i data-lucide="plus" class="h-4 w-4 mr-2"></i> Tambah Baris Peserta / Penerima Baru
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot class="bg-slate-100 font-bold">
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-2 text-right">TOTAL KESELURUHAN</td>
+                                        <td class="px-4 py-2 text-right text-blue-700" x-text="formatCurrency(grandTotal())"></td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Penandatangan -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50 border rounded-lg mb-3">
+                        <div>
+                            <h4 class="font-semibold mb-1">Penandatangan (PPTK)</h4>
+                            <div class="space-y-2">
+                                <input type="text" x-model="formData.pptkNama" placeholder="Nama PPTK" class="w-full p-1.5 border rounded">
+                                <input type="text" x-model="formData.pptkNip" placeholder="NIP PPTK" class="w-full p-1.5 border rounded">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Kelengkapan Dokumen -->
+                    <div class="mb-4 p-4 bg-slate-50 border rounded-lg">
+                        <h4 class="font-bold text-slate-800 mb-3 flex items-center">
+                            <i data-lucide="clipboard-check" class="h-4 w-4 mr-2"></i> Kelengkapan Dokumen SI
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <template x-for="item in checklistItems.filter(i => !i.isPerPerson)" :key="item.id">
+                                <div class="bg-white p-3 border rounded-lg shadow-sm flex flex-col space-y-2">
+                                    <span class="text-xs font-bold text-slate-700 truncate" x-text="item.label"></span>
+                                    <div class="flex items-center space-x-4">
+                                        <label class="flex items-center space-x-2 cursor-pointer group">
+                                            <input type="checkbox" 
+                                                @change="formData.kelengkapan[item.id] = $event.target.checked ? 'ada' : null"
+                                                :checked="formData.kelengkapan[item.id] === 'ada'"
+                                                class="h-4 w-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                                            <span class="text-xs text-slate-600 group-hover:text-blue-600">Ada</span>
+                                        </label>
+                                        <label class="flex items-center space-x-2 cursor-pointer group">
+                                            <input type="checkbox" 
+                                                @change="formData.kelengkapan[item.id] = $event.target.checked ? 'belum_ada' : null"
+                                                :checked="formData.kelengkapan[item.id] === 'belum_ada'"
+                                                class="h-4 w-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500">
+                                            <span class="text-xs text-slate-600 group-hover:text-rose-600">Belum Ada</span>
+                                        </label>
+                                    </div>
+                                    <!-- Input Nomor & Tanggal untuk ST dan SP -->
+                                    <template x-if="item.id === 'st' && formData.kelengkapan[item.id] === 'ada'">
+                                        <div class="grid grid-cols-1 gap-1 pt-1 border-t mt-1">
+                                            <input type="text" x-model="formData.noSuratTugas" placeholder="Nomor Surat Tugas" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                                            <input type="date" x-model="formData.tglSuratTugas" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                                        </div>
+                                    </template>
+                                    <template x-if="item.id === 'sp' && formData.kelengkapan[item.id] === 'ada'">
+                                        <div class="grid grid-cols-1 gap-1 pt-1 border-t mt-1">
+                                            <input type="text" x-model="formData.noSuratPerintah" placeholder="Nomor Surat Perintah" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                                            <input type="date" x-model="formData.tglSuratPerintah" class="w-full p-1 text-[10px] border rounded focus:ring-1 focus:ring-blue-500">
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-3">
+                        <button type="button" x-show="editIndex !== null" @click="resetForm(); view = 'list'" class="bg-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold hover:bg-slate-300">BATAL</button>
+                        <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700" x-text="editIndex !== null ? 'UPDATE DOKUMEN' : 'SIMPAN DOKUMEN'"></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- VIEW: REKAP DATA (LIST) -->
         <div x-show="view === 'list'" x-cloak>
-            <div class="card"><div class="card-header flex flex-wrap justify-between items-center gap-3"><h2 class="text-xl font-bold">Rekap Data SI</h2><div><button @click="backupData()" class="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg text-sm">Backup</button><button @click="$refs.restoreInput.click()" class="bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg text-sm ml-2">Restore</button><input type="file" x-ref="restoreInput" @change="restoreData($event)" class="hidden" accept=".json"></div></div>
-            <div class="overflow-x-auto p-1"><table class="data-table"><thead><tr><th>Nomor & Tanggal</th><th>Kegiatan</th><th>Sub Kegiatan</th><th>Jenis</th><th>Rincian Penerima</th><th>Kelengkapan</th><th class="text-right">Total</th><th>Dibuat oleh</th><th>Terakhir diubah</th><th class="text-center">Aksi</th></tr></thead><tbody><template x-for="group in getGroupedDocs()" :key="group.name"><tr class="bg-blue-50/50"><td colspan="10" class="font-bold text-blue-900"><span x-text="group.name"></span> <span class="text-xs font-normal ml-2" x-text="Object.values(group.subs).map(s=>s.count+' SI').join(', ')"></span></td></tr><template x-for="doc in group.docs" :key="doc.id"><tr><td><div class="font-bold" x-text="doc.nomorSi"></div><div class="text-[9px]" x-text="formatDate(doc.tanggalPengajuan)"></div></td><td x-text="doc.kegiatan"></td><td x-text="doc.subKegiatan"></td><td x-text="doc.jenisKegiatan||'-'"></td><td><template x-for="item in doc.items"><div class="flex justify-between"><span x-text="item.uraian||'-'"></span><span x-text="formatCurrency(calculateItemTotal(item,doc))"></span></div></template></td><td><div class="flex items-center gap-1"><div class="w-12 bg-slate-200 rounded-full h-1.5"><div class="bg-blue-600 h-1.5 rounded-full" :style="`width: ${calculateProgress(doc)}%`"></div></div><span class="text-[9px]" x-text="countMissing(doc)>0?`${countChecked(doc)}/${countChecked(doc)+countMissing(doc)}`:'100%'"></span></div><div class="text-[8px]" :class="countMissing(doc)>0?'text-red-500':'text-emerald-600'" x-text="countMissing(doc)>0?countMissing(doc)+' Belum Ada':'Lengkap'"></div></td><td class="text-right font-bold" x-text="formatCurrency(doc.totalKeseluruhan)"></td><td x-text="doc.createdBy || '-'"></td><td x-text="doc.updatedBy ? (doc.updatedBy + ' (' + formatDateTime(doc.updatedAt) + ')') : (doc.createdBy ? (doc.createdBy + ' (' + formatDateTime(doc.createdAt) + ')') : '-')"></td><td class="whitespace-nowrap"><button @click="printDoc(doc)" class="text-blue-600 bg-blue-50 p-1 rounded">Cetak</button> <button @click="printChecklist(doc)" class="text-emerald-600 bg-emerald-50 p-1 rounded">Kontrol</button> <button @click="editDoc(doc)" class="text-amber-600 bg-amber-50 p-1 rounded">Edit</button> <button @click="deleteDoc(doc)" class="text-red-600 bg-red-50 p-1 rounded">Hapus</button></td></tr></template></template></tbody></table></div></div>
+            <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
+                <div class="bg-slate-50 px-6 py-2 border-b flex justify-between items-center">
+                    <h2 class="text-xl font-bold">Rekap Data SI</h2>
+                    <div class="flex gap-2">
+                        <button @click="backupData()" class="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-md text-sm font-medium" title="Backup Semua Data">Backup</button>
+                        <button @click="$refs.restoreInput.click()" class="bg-orange-50 text-orange-700 px-3 py-1.5 rounded-md text-sm font-medium" title="Pulihkan Data dari Backup">Restore</button>
+                        <input type="file" x-ref="restoreInput" @change="restoreData($event)" class="hidden" accept=".json">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th @click="sortBy('tanggalPengajuan')" class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">
+                                    <div class="flex items-center">
+                                        Nomor & Tanggal
+                                        <span x-show="sortKey === 'tanggalPengajuan'" class="ml-1">
+                                            <i data-lucide="chevron-up" class="h-3 w-3" x-show="sortDir === 'asc'"></i>
+                                            <i data-lucide="chevron-down" class="h-3 w-3" x-show="sortDir === 'desc'"></i>
+                                        </span>
+                                    </div>
+                                </th>
+                                <th @click="sortBy('kegiatan')" class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">
+                                    <div class="flex items-center">
+                                        Kegiatan
+                                        <span x-show="sortKey === 'kegiatan'" class="ml-1">
+                                            <i data-lucide="chevron-up" class="h-3 w-3" x-show="sortDir === 'asc'"></i>
+                                            <i data-lucide="chevron-down" class="h-3 w-3" x-show="sortDir === 'desc'"></i>
+                                        </span>
+                                    </div>
+                                </th>
+                                <th @click="sortBy('subKegiatan')" class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">
+                                    <div class="flex items-center">
+                                        Sub Kegiatan
+                                        <span x-show="sortKey === 'subKegiatan'" class="ml-1">
+                                            <i data-lucide="chevron-up" class="h-3 w-3" x-show="sortDir === 'asc'"></i>
+                                            <i data-lucide="chevron-down" class="h-3 w-3" x-show="sortDir === 'desc'"></i>
+                                        </span>
+                                    </div>
+                                </th>
+                                <th class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase">Jenis</th>
+                                <th class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase">Rincian Penerima</th>
+                                <th class="px-6 py-2 text-left text-xs font-medium text-slate-500 uppercase">Kelengkapan</th>
+                                <th @click="sortBy('totalKeseluruhan')" class="px-6 py-2 text-right text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">
+                                    <div class="flex items-center justify-end">
+                                        Total Rp
+                                        <span x-show="sortKey === 'totalKeseluruhan'" class="ml-1">
+                                            <i data-lucide="chevron-up" class="h-3 w-3" x-show="sortDir === 'asc'"></i>
+                                            <i data-lucide="chevron-down" class="h-3 w-3" x-show="sortDir === 'desc'"></i>
+                                        </span>
+                                    </div>
+                                </th>
+                                <th class="px-6 py-2 text-center text-xs font-medium text-slate-500 uppercase">Aksi</th>
+                            </tr>
+                        </thead>
+                        <template x-for="group in getGroupedDocs()" :key="group.name">
+                            <tbody class="bg-white divide-y border-b-4 border-slate-200">
+                                <!-- Month Header & Stats -->
+                                <tr class="bg-blue-50/80">
+                                    <td colspan="7" class="px-6 py-3">
+                                        <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                                            <div>
+                                                <h3 class="text-lg font-black text-blue-900 uppercase tracking-tight" x-text="group.name"></h3>
+                                                <div class="flex flex-wrap gap-2 mt-1">
+                                                    <template x-for="(stat, subName) in group.subs" :key="subName">
+                                                        <span class="bg-white border border-blue-200 text-[10px] px-2 py-1 rounded-md shadow-sm font-medium">
+                                                            <span class="text-blue-700" x-text="subName"></span>: 
+                                                            <span class="font-bold text-slate-800" x-text="stat.count + ' SI'"></span> 
+                                                            (<span x-text="formatCurrency(stat.total)"></span>)
+                                                        </span>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- Document Rows -->
+                                <template x-for="doc in group.docs" :key="doc.id">
+                                    <tr class="hover:bg-slate-50 transition-colors">
+                                        <td class="px-6 py-2">
+                                            <div class="font-bold text-slate-800" x-text="doc.nomorSi"></div>
+                                            <div class="text-[10px] text-slate-500 font-medium" x-text="formatDate(doc.tanggalPengajuan)"></div>
+                                        </td>
+                                        <td class="px-6 py-2 text-sm font-medium text-slate-700" x-text="doc.kegiatan"></td>
+                                        <td class="px-6 py-2 text-xs text-slate-500 font-medium" x-text="doc.subKegiatan"></td>
+                                        <td class="px-6 py-2 text-[10px] font-bold text-blue-600" x-text="doc.jenisKegiatan || '-'"></td>
+                                        <td class="px-6 py-2 text-[10px] text-slate-600 align-top">
+                                            <div class="space-y-1 min-w-[200px]">
+                                                <template x-for="item in doc.items">
+                                                    <div class="flex justify-between border-b border-slate-50 pb-0.5 last:border-0">
+                                                        <span class="font-medium" x-text="item.uraian || '-'"></span>
+                                                        <span class="text-slate-400 ml-4" x-text="formatCurrency(calculateItemTotal(item, doc))"></span>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-2">
+                                            <div>
+                                                <div class="flex items-center">
+                                                    <div class="w-full bg-slate-200 rounded-full h-1.5 mr-2 max-w-[60px]">
+                                                        <div class="bg-blue-600 h-1.5 rounded-full" :style="`width: ${calculateProgress(doc)}%`"></div>
+                                                    </div>
+                                                    <span class="text-[10px] font-bold text-slate-600" x-text="countMissing(doc) > 0 ? `${countChecked(doc)}/${countChecked(doc) + countMissing(doc)}` : '100%'"></span>
+                                                </div>
+                                                <div class="text-[9px] mt-1 font-medium" :class="countMissing(doc) > 0 ? 'text-red-500' : 'text-emerald-600'" x-text="countMissing(doc) > 0 ? countMissing(doc) + ' Belum Ada' : 'Lengkap'"></div>
+                                                <div class="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5">
+                                                    <!-- Item Kurang -->
+                                                    <template x-for="item in checklistItems" :key="item.id">
+                                                        <div x-show="item.isPerPerson ? doc.items.some(p => p.kelengkapan && p.kelengkapan[item.id] === 'belum_ada') : (doc.kelengkapan && doc.kelengkapan[item.id] === 'belum_ada')" 
+                                                             class="text-[9px] text-red-500 flex items-start leading-tight">
+                                                            <span class="mr-1">•</span>
+                                                            <span x-text="item.label"></span>
+                                                        </div>
+                                                    </template>
+                                                    <!-- Item Lengkap -->
+                                                    <template x-for="item in checklistItems" :key="item.id">
+                                                        <div x-show="doc.kelengkapan && doc.kelengkapan[item.id] === 'ada'" 
+                                                             class="text-[9px] text-emerald-600 flex items-start leading-tight font-medium">
+                                                            <span class="mr-1">✓</span>
+                                                            <span x-text="item.label"></span>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                            <div x-show="/(reimburse|reimbuse|tagihan)/i.test(doc.acara)" class="text-[10px] text-slate-400 italic">N/A</div>
+                                        </td>
+                                        <td class="px-6 py-2 text-[10px] text-slate-500 italic" x-text="getDocKeterangan(doc) || '-'"></td>
+                                        <td class="px-6 py-2 text-right font-black text-slate-900" x-text="formatCurrency(doc.totalKeseluruhan)"></td>
+                                        <td class="px-6 py-4 text-center whitespace-nowrap">
+                                            <button @click="printDoc(doc)" class="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100">
+                                                <i data-lucide="printer" class="h-4 w-4"></i>
+                                            </button>
+                                            <button @click="printChecklist(doc)" class="text-emerald-600 bg-emerald-50 p-2 rounded hover:bg-emerald-100 ml-2" title="Cetak Lembar Kontrol">
+                                                <i data-lucide="clipboard-check" class="h-4 w-4"></i>
+                                            </button>
+                                            <button @click="editDoc(doc)" class="text-amber-600 bg-amber-50 p-2 rounded hover:bg-amber-100 ml-2" title="Edit Data">
+                                                <i data-lucide="edit-3" class="h-4 w-4"></i>
+                                            </button>
+                                            <button @click="deleteDoc(doc)" class="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100 ml-2">
+                                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </template>
+                    </table>
+                </div>
+            </div>
         </div>
 
-        <!-- REKAP PER NAMA dengan search & sort -->
+        <!-- VIEW: REKAP PER NAMA (semua detail menjadi kolom terpisah) -->
         <div x-show="view === 'rekapNama'" x-cloak>
-            <div class="card"><div class="card-header"><h2 class="text-xl font-bold">Rekap Detail Per Penerima</h2><div class="flex flex-wrap gap-3 mt-2"><div class="flex-1"><input type="text" x-model="searchRekap" placeholder="Cari (Nama, No SI, Kegiatan)" class="w-full"></div><div class="flex gap-2"><span>Urutkan:</span><select x-model="sortColumnRekap" class="text-sm"><option value="no">No</option><option value="nomorSi">Nomor SI</option><option value="nama">Nama</option><option value="tanggal">Tanggal</option><option value="total">Total</option></select><button @click="sortOrderRekap = sortOrderRekap === 'asc' ? 'desc' : 'asc'" class="px-3 py-1 border rounded-lg text-sm">ASC/DESC</button></div></div><p class="text-xs text-slate-500 mt-2">Menampilkan <span x-text="filteredRekapRows.length"></span> dari <span x-text="rekapRowsFlat.length"></span> data</p></div>
-            <div class="overflow-x-auto"><table class="data-table super-wide-table"><thead>...</thead><tbody>...</tbody></table></div></div>
+            <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200">
+                    <h2 class="text-xl font-bold text-slate-800">Rekap Detail Per Penerima</h2>
+                    <p class="text-sm text-slate-500 mt-1">Daftar rincian biaya perorangan dari seluruh dokumen SI. Setiap detail hotel dan tiket memiliki kolom sendiri.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200 text-[10px] rekap-table">
+                        <thead class="bg-slate-50 font-bold text-slate-600 uppercase">
+                            <tr>
+                                <th class="border-r px-1 py-1 text-left">Nomor SI & Tanggal</th>
+                                <th class="border-r px-1 py-1 text-left">Penerima</th>
+                                <th class="border-r px-1 py-1 text-left">Jabatan</th>
+                                <th class="border-r px-1 py-1 text-left">Nama AKD</th>
+                                <th class="border-r px-1 py-1 text-left">Perjalanan</th>
+                                <th class="border-r px-1 py-1 text-left">Waktu/Hari</th>
+                                <th class="border-r px-1 py-1 text-left">No/Tgl Surat Tugas</th>
+                                <th class="border-r px-1 py-1 text-left">No. SPPD</th>
+                                <th class="border-r px-1 py-1 text-right bg-blue-50">Total</th>
+                                <th class="border-r px-1 py-1 text-right">Harian</th>
+                                <th class="border-r px-1 py-1 text-right">Repres.</th>
+                                <th class="border-r px-1 py-1 text-right">Transp.</th>
+                                <th class="border-r px-1 py-1 text-right">Tiket Berangkat</th>
+                                <th class="border-r px-1 py-1 text-right">Tiket Pulang</th>
+                                <th class="border-r px-1 py-1 text-right">Taksi</th>
+                                <th class="border-r px-1 py-1 text-right">Hotel (Biaya)</th>
+                                <!-- Detail Hotel: 7 kolom -->
+                                <th class="border-r px-1 py-1 text-left">Nama Penginapan</th>
+                                <th class="border-r px-1 py-1 text-left">Alamat Penginapan</th>
+                                <th class="border-r px-1 py-1 text-left">Cek In</th>
+                                <th class="border-r px-1 py-1 text-left">Cek Out</th>
+                                <th class="border-r px-1 py-1 text-left">No Kamar</th>
+                                <th class="border-r px-1 py-1 text-left">Email</th>
+                                <th class="border-r px-1 py-1 text-left">Telepon</th>
+                                <!-- Detail Tiket Berangkat: 8 kolom -->
+                                <th class="border-r px-1 py-1 text-left">Tgl Berangkat</th>
+                                <th class="border-r px-1 py-1 text-left">Maskapai</th>
+                                <th class="border-r px-1 py-1 text-left">Kode Booking</th>
+                                <th class="border-r px-1 py-1 text-left">No Tiket</th>
+                                <th class="border-r px-1 py-1 text-left">No Flight</th>
+                                <th class="border-r px-1 py-1 text-left">No Tempat Duduk</th>
+                                <th class="border-r px-1 py-1 text-left">Bandara Keberangkatan</th>
+                                <th class="border-r px-1 py-1 text-left">Bandara Kedatangan</th>
+                                <!-- Detail Tiket Pulang: 8 kolom -->
+                                <th class="border-r px-1 py-1 text-left">Tgl Pulang</th>
+                                <th class="border-r px-1 py-1 text-left">Maskapai</th>
+                                <th class="border-r px-1 py-1 text-left">Kode Booking</th>
+                                <th class="border-r px-1 py-1 text-left">No Tiket</th>
+                                <th class="border-r px-1 py-1 text-left">No Flight</th>
+                                <th class="border-r px-1 py-1 text-left">No Tempat Duduk</th>
+                                <th class="border-r px-1 py-1 text-left">Bandara Keberangkatan</th>
+                                <th class="border-r px-1 py-1 text-left">Bandara Kedatangan</th>
+                                <th class="px-1 py-1 text-left">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-slate-100">
+                            <template x-for="doc in documents">
+                                <template x-for="item in doc.items">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="border-r px-1 py-0.5">
+                                            <div class="font-bold text-blue-700" x-text="doc.nomorSi"></div>
+                                            <div class="text-[9px]" x-text="doc.tanggalPengajuan"></div>
+                                        </td>
+                                        <td class="border-r px-1 py-0.5 font-bold text-slate-900" x-text="item.uraian || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-600" x-text="item.jabatan || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-600" x-text="item.akd || '-'"></td>
+                                        <td class="border-r px-1 py-0.5">
+                                            <div class="font-medium" x-text="(doc.asal || '-') + ' -> ' + (doc.tujuan || '-')"></div>
+                                        </td>
+                                        <td class="border-r px-1 py-0.5">
+                                            <div x-text="(doc.tglBerangkat ? formatDate(doc.tglBerangkat) : '-')"></div>
+                                            <div class="text-[9px] text-slate-500" x-text="(doc.tglKembali ? formatDate(doc.tglKembali) : '-')"></div >
+                                            <div class="font-bold text-blue-600" x-text="(doc.jumlahHari || 0) + ' Hari'"></div>
+                                        </td>
+                                        <td class="border-r px-1 py-0.5">
+                                            <div class="font-medium" x-text="doc.noSuratTugas || '-'"></div>
+                                            <div class="text-[9px] text-slate-500" x-text="doc.tglSuratTugas ? formatDate(doc.tglSuratTugas) : ''"></div>
+                                        </td>
+                                        <td class="border-r px-1 py-0.5 text-slate-600" x-text="item.noSppd || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-right font-bold bg-blue-50/30" x-text="formatCurrency(calculateItemTotal(item, doc))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaHarian || 0) * (item.jmlHariHarian || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaRepresentatif || 0) * (item.jmlHariRepresentatif || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTransportasi || 0) * (item.jmlTransportasi || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTiketBerangkat || 0) * (item.jmlTiketBerangkat || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTiketPulang || 0) * (item.jmlTiketPulang || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500" x-text="formatCurrency((item.hargaTaksi || 0) * (item.jmlTaksi || 0))"></td>
+                                        <td class="border-r px-1 py-0.5 text-right text-slate-500">
+                                            <span x-text="formatCurrency(getHotelValue(item, doc))"></span>
+                                            <template x-if="item.isPenginapan30Persen"><span class="text-[9px] block text-orange-600">(30%)</span></template>
+                                        </td>
+                                        <!-- Detail Hotel -->
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.nama || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.alamat || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.tglCekIn ? formatDate(item.detailHotel.tglCekIn) : '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.tglCekOut ? formatDate(item.detailHotel.tglCekOut) : '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.noKamar || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.email || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailHotel?.telepon || '-'"></td>
+                                        <!-- Detail Tiket Berangkat -->
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.tanggal ? formatDate(item.detailTiketBerangkat.tanggal) : '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.maskapai || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.kodeBooking || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.noTiket || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.noFlight || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.noTempatDuduk || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.bandaraKeberangkatan || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketBerangkat?.bandaraKedatangan || '-'"></td>
+                                        <!-- Detail Tiket Pulang -->
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.tanggal ? formatDate(item.detailTiketPulang.tanggal) : '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.maskapai || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.kodeBooking || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.noTiket || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.noFlight || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.noTempatDuduk || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.bandaraKeberangkatan || '-'"></td>
+                                        <td class="border-r px-1 py-0.5 text-slate-700" x-text="item.detailTiketPulang?.bandaraKedatangan || '-'"></td>
+                                        <td class="px-1 py-0.5 text-slate-500 italic" :title="item.keterangan" x-text="item.keterangan || '-'"></td>
+                                    </tr>
+                                </template>
+                            </template>
+                            <template x-if="documents.length === 0">
+                                <tr><td colspan="46" class="px-6 py-10 text-center text-slate-400">Belum ada data untuk ditampilkan.</td></tr>
+                            </template>
+                        </tbody>
+                        <tfoot class="bg-slate-100 font-bold text-slate-800">
+                            <tr>
+                                <td colspan="8" class="px-1 py-1 text-right">TOTAL SELURUH PENERIMA</td>
+                                <td class="px-1 py-1 text-right text-blue-800" x-text="formatCurrency(documents.reduce((s, d) => s + d.totalKeseluruhan, 0))"></td>
+                                <td colspan="37" class="border-r"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
         </div>
 
-        <!-- PRINT placeholders -->
-        <div x-show="view === 'printStat'" x-cloak class="bg-white p-8 mx-auto">[Print Statistik]</div>
-        <div x-show="view === 'print'" x-cloak class="bg-white p-4 max-w-[330mm] mx-auto">[Print SI]</div>
-        <div x-show="view === 'printChecklist'" x-cloak class="bg-white p-4 max-w-[215mm] mx-auto">[Print Checklist]</div>
+        <!-- VIEW: REKAP STATISTIK -->
+        <div x-show="view === 'rekapStatistik'" x-cloak>
+            <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-slate-200">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200">
+                    <h2 class="text-xl font-bold text-slate-800">Statistik Realisasi Per Jenis Kegiatan</h2>
+                    <p class="text-sm text-slate-500 mt-1">Rekapitulasi total anggaran berdasarkan Jenis Kegiatan dan periode waktu.</p>
+                </div>
+                <div class="p-6 space-y-8">
+                    <template x-for="(group, title) in { 'Bulanan': 'monthly', 'Triwulan': 'quarterly', 'Semester': 'semester', 'Masa Sidang': 'masaSidang', 'Tahunan': 'yearly' }" :key="title">
+                        <div class="border rounded-xl p-4 bg-slate-50/30">
+                            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                                <h3 class="text-lg font-bold text-blue-800 flex items-center">
+                                    <i data-lucide="calendar" class="h-5 w-5 mr-2"></i>
+                                    Rekap <span x-text="title"></span>
+                                </h3>
+                                <button @click="printStat(title, group)" class="flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md text-xs font-bold border border-blue-200 hover:bg-blue-100 transition-colors">
+                                    <i data-lucide="printer" class="h-3.5 w-3.5 mr-1.5"></i> Cetak <span x-text="title"></span>
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto bg-white rounded-lg shadow-sm">
+                                <table class="min-w-full border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-100 border-b border-slate-200">
+                                            <th class="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase">Periode</th>
+                                            <template x-for="jk in ['Koordinasi dan Konsultasi', 'Kunjungan Kerja', 'Pansus', 'Undangan']" :key="jk">
+                                                <th class="px-4 py-3 text-center text-[10px] font-black text-slate-500 uppercase" x-text="jk"></th>
+                                            </template>
+                                            <th class="px-4 py-3 text-center text-[10px] font-black text-blue-600 uppercase">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <template x-for="(data, period) in getStats()[group]" :key="period">
+                                            <tr class="hover:bg-blue-50/30 transition-colors">
+                                                <td class="px-4 py-3 text-xs font-bold text-slate-700 align-top" x-text="period"></td>
+                                                <template x-for="jk in ['Koordinasi dan Konsultasi', 'Kunjungan Kerja', 'Pansus', 'Undangan']" :key="jk">
+                                                    <td class="px-4 py-3 text-center text-xs text-slate-600 align-top">
+                                                        <div class="text-[9px] text-slate-400 text-left">
+                                                            <template x-for="(evt, eIdx) in (data[jk]?.events || [])" :key="eIdx">
+                                                                <div class="truncate max-w-[150px]" x-text="(eIdx + 1) + '. ' + evt" :title="evt"></div>
+                                                            </template>
+                                                        </div>
+                                                    </td>
+                                                </template>
+                                                <td class="px-4 py-3 text-center text-xs font-black text-blue-700 align-top"></td>
+                                            </tr>
+                                        </template>
+                                        <template x-if="Object.keys(getStats()[group]).length === 0">
+                                            <tr>
+                                                <td colspan="6" class="px-4 py-12 text-center text-slate-400 italic">Belum ada data untuk periode ini.</td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: PRINT STATISTIK -->
+        <div x-show="view === 'printStat'" x-cloak class="bg-white p-8 mx-auto text-black print-stat-container">
+            <div class="flex justify-between mb-6 print-hidden border-b pb-4">
+                <button @click="view = 'rekapStatistik'" class="text-slate-600 flex items-center"><i data-lucide="x" class="h-4 w-4 mr-1"></i> Tutup & Kembali</button>
+                <button @click="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded shadow hover:bg-blue-700 flex items-center font-bold">
+                    <i data-lucide="printer" class="h-4 w-4 mr-2"></i> Cetak Laporan
+                </button>
+            </div>
+
+            <div style="font-family: Arial, sans-serif;">
+                <div class="text-center mb-8">
+                    <h1 class="font-bold text-xl uppercase underline">LAPORAN STATISTIK KEGIATAN</h1>
+                    <h2 class="font-bold text-lg uppercase mt-1" x-text="'REKAPITULASI ' + selectedStatTitle"></h2>
+                </div>
+                
+                <table class="w-full border-collapse stat-table text-[12px]">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-2 text-center w-40">PERIODE</th>
+                            <template x-for="jk in ['Koordinasi dan Konsultasi', 'Kunjungan Kerja', 'Pansus', 'Undangan']" :key="jk">
+                                <th class="p-2 text-center" x-text="jk.toUpperCase()"></th>
+                            </template>
+                            <th class="p-2 text-center w-24">TOTAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-if="selectedStatGroup">
+                            <template x-for="(data, period) in getStats()[selectedStatGroup]" :key="period">
+                                <tr>
+                                    <td class="p-2 font-bold align-top" x-text="period"></td>
+                                    <template x-for="jk in ['Koordinasi dan Konsultasi', 'Kunjungan Kerja', 'Pansus', 'Undangan']" :key="jk">
+                                        <td class="p-2 text-center align-top">
+                                            <div class="text-[9px] text-left">
+                                                <template x-for="(evt, eIdx) in (data[jk]?.events || [])" :key="eIdx">
+                                                    <div x-text="(eIdx + 1) + '. ' + evt"></div>
+                                                </template>
+                                            </div>
+                                        </td>
+                                    </template>
+                                    <td class="p-2 text-center font-bold align-top"></td>
+                                </tr>
+                            </template>
+                        </template>
+                    </tbody>
+                    <tfoot class="font-bold bg-gray-100">
+                        <tr>
+                            <td class="p-2 text-center uppercase">Grand Total</td>
+                            <template x-for="jk in ['Koordinasi dan Konsultasi', 'Kunjungan Kerja', 'Pansus', 'Undangan']" :key="jk">
+                                <td class="p-2 text-center" x-text="getStatColTotal(selectedStatGroup, jk)"></td>
+                            </template>
+                            <td class="p-2 text-center bg-gray-200" x-text="getStatGrandTotal(selectedStatGroup)"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="flex justify-between mt-16 px-4">
+                    <div class="text-center w-64">
+                        <p>Mengetahui,</p>
+                        <p class="mb-20 uppercase">Pengguna Anggaran,</p>
+                        <p class="font-bold underline">BORIS DERRURASMAN, SH.Sp.N.MH.</p>
+                        <p>NIP. 196609091987031004</p>
+                    </div>
+                    <div class="text-center w-64">
+                        <p x-text="'Bogor, ' + formatDate(new Date().toISOString().split('T')[0])"></p>
+                        <p class="mb-20 uppercase">PPTK,</p>
+                        <p class="font-bold underline uppercase">POPY RACHMAWATI, SH</p>
+                        <p>NIP. 197909052010012001</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: PRINT LAYOUT -->
+        <div x-show="view === 'print'" x-cloak class="bg-white p-4 max-w-[330mm] mx-auto text-black border shadow-xl print:shadow-none print:border-none">
+            <div class="flex justify-between mb-4 print-hidden border-b pb-2">
+                <button @click="view = 'list'" class="text-slate-600 flex items-center"><i data-lucide="x" class="h-4 w-4 mr-1"></i> Tutup</button>
+                <button @click="window.print()" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 flex items-center">
+                    <i data-lucide="printer" class="h-4 w-4 mr-2"></i> Cetak Sekarang
+                </button>
+            </div>
+
+            <div id="print-area" style="font-family: Arial, sans-serif; font-size: 12px;">
+                <h1 class="text-center font-bold text-lg mb-2 uppercase">Standing Instruction Perjalanan Dinas</h1>
+                
+                <table class="w-full table-auto mb-1">
+                    <tr x-show="selectedDoc">
+                        <td class="w-32 py-1 uppercase">Jenis SI</td><td class="w-4">:</td><td class="font-bold" x-text="selectedDoc?.jenisSi"></td>
+                    </tr>
+                    <tr x-show="selectedDoc">
+                        <td class="py-1 uppercase">Nomor SI</td><td>:</td><td class="font-bold" x-text="selectedDoc?.nomorSi"></td>
+                    </tr>
+                    <tr x-show="selectedDoc">
+                        <td class="py-1 uppercase">Kegiatan</td><td>:</td><td x-text="selectedDoc?.kegiatan"></td>
+                    </tr>
+                    <tr x-show="selectedDoc">
+                        <td class="py-1 uppercase">Sub Kegiatan</td><td>:</td><td x-text="selectedDoc?.subKegiatan"></td>
+                    </tr>
+                    <tr x-show="selectedDoc">
+                        <td class="py-1 uppercase">Jenis Kegiatan</td><td>:</td><td class="font-bold" x-text="selectedDoc?.jenisKegiatan"></td>
+                    </tr>
+                    <tr x-show="selectedDoc">
+                        <td class="py-1 uppercase">Acara</td><td>:</td><td x-text="selectedDoc?.acara"></td>
+                    </tr>
+                </table>
+
+                <table class="w-full table-auto border-collapse border border-black mb-4">
+                    <thead>
+                        <tr class="bg-gray-100 font-bold text-center">
+                            <th class="border border-black p-1">NO</th>
+                            <th class="border border-black p-1 whitespace-nowrap">KODE REKENING BELANJA</th>
+                            <th class="border border-black p-1 whitespace-nowrap">URAIAN / PENERIMA</th>
+                            <th class="border border-black p-1">BANK</th>
+                            <th class="border border-black p-1 whitespace-nowrap">NOMOR REKENING</th>
+                            <th class="border border-black p-1">JUMLAH DIBAYAR</th>
+                            <th class="border border-black p-1">UANG HARIAN</th>
+                            <th class="border border-black p-1">UANG REPRESENTATIF</th>
+                            <th class="border border-black p-1">BIAYA TRANSPORT</th>
+                            <th class="border border-black p-1">TIKET BERANGKAT</th>
+                            <th class="border border-black p-1">TIKET PULANG</th>
+                            <th class="border border-black p-1">BIAYA TAKSI</th>
+                            <th class="border border-black p-1">BIAYA HOTEL</th>
+                            <th class="border border-black p-1 whitespace-nowrap">KET.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Baris Keterangan Global SI -->
+                        <template x-if="selectedDoc && (selectedDoc.ketHarian || selectedDoc.ketRepresentatif || selectedDoc.ketTransportasi || selectedDoc.ketTiketBerangkat || selectedDoc.ketTiketPulang || selectedDoc.ketTaksi || selectedDoc.ketHotel)">
+                            <tr class="bg-slate-50 italic text-[9px]">
+                                <td class="border border-black p-1"></td>
+                                <td class="border border-black p-1"></td>
+                                <td class="border border-black p-1 font-bold text-blue-700">KETERANGAN SI:</td>
+                                <td class="border border-black p-1"></td>
+                                <td class="border border-black p-1"></td>
+                                <td class="border border-black p-1"></td>
+                                <td class="border border-black p-1 bg-blue-50/30" x-text="selectedDoc.ketHarian"></td>
+                                <td class="border border-black p-1 bg-blue-50/30" x-text="selectedDoc.ketRepresentatif"></td>
+                                <td class="border border-black p-1 bg-blue-50/30" x-text="selectedDoc.ketTransportasi"></td>
+                                <td class="border border-black p-1 bg-purple-50/30" x-text="selectedDoc.ketTiketBerangkat"></td>
+                                <td class="border border-black p-1 bg-pink-50/30" x-text="selectedDoc.ketTiketPulang"></td>
+                                <td class="border border-black p-1 bg-blue-50/30" x-text="selectedDoc.ketTaksi"></td>
+                                <td class="border border-black p-1 bg-blue-50/30" x-text="selectedDoc.ketHotel"></td>
+                                <td class="border border-black p-1"></td>
+                            </tr>
+                        </template>
+                        <!-- Baris Data Peserta -->
+                        <template x-for="(item, idx) in (selectedDoc ? selectedDoc.items : [])" :key="idx">
+                                <tr>
+                                    <td class="border border-black p-1 text-center" x-text="idx+1"></td>
+                                    <td class="border border-black p-1">
+                                        <div class="font-bold" x-text="item.kodeRekening"></div>
+                                        <div class="text-[10px] italic leading-tight" x-text="item.namaRekening"></div>
+                                    </td>
+                                    <td class="border border-black p-1 whitespace-nowrap" x-text="item.uraian"></td>
+                                    <td class="border border-black p-1" x-text="item.namaBank"></td>
+                                    <td class="border border-black p-1 font-mono font-bold text-[13px]" x-text="item.nomorRekening"></td>
+                                    <td class="border border-black p-1 text-right font-bold" x-text="formatCurrency(calculateItemTotal(item, selectedDoc))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaHarian || 0) * (item.jmlHariHarian || 0))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaRepresentatif || 0) * (item.jmlHariRepresentatif || 0))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaTransportasi || 0) * (item.jmlTransportasi || 0))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaTiketBerangkat || 0) * (item.jmlTiketBerangkat || 0))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaTiketPulang || 0) * (item.jmlTiketPulang || 0))"></td>
+                                    <td class="border border-black p-1 text-right" x-text="formatCurrency((item.hargaTaksi || 0) * (item.jmlTaksi || 0))"></td>
+                                    <td class="border border-black p-1 text-right">
+                                        <span x-text="formatCurrency(getHotelValue(item, selectedDoc))"></span>
+                                        <template x-if="item.isPenginapan30Persen"><div class="text-[8px]">(30%)</div></template>
+                                    </td>
+                                    <td class="border border-black p-1" x-text="item.keterangan"></td>
+                                </tr>
+                        </template>
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-bold">
+                            <td colspan="5" class="border border-black p-2 text-right">TOTAL</td>
+                            <td class="border border-black p-2 text-right" x-text="formatCurrency(selectedDoc?.totalKeseluruhan)"></td>
+                            <td colspan="8" class="border border-black p-2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="flex justify-between mt-10 px-8">
+                    <div class="text-center w-72">
+                        <p>Mengetahui,</p>
+                        <p class="mb-20">PENGGUNA ANGGARAN,</p>
+                        <p class="font-bold underline">BORIS DERRURASMAN, SH.Sp.N.MH.</p>
+                        <p>NIP. 196609091987031004</p>
+                    </div>
+                    <div class="text-center w-72">
+                        <p x-text="'Bogor, ' + formatDate(selectedDoc?.tanggalPengajuan)"></p>
+                        <p class="mb-20">PPTK,</p>
+                        <p class="font-bold underline uppercase" x-text="selectedDoc?.pptkNama"></p>
+                        <p x-text="'NIP. ' + selectedDoc?.pptkNip"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: PRINT CHECKLIST -->
+        <div x-show="view === 'printChecklist'" x-cloak class="bg-white p-4 max-w-[215mm] mx-auto text-black border shadow-xl print:shadow-none print:border-none print-checklist-container">
+            <div class="flex justify-between mb-4 print-hidden border-b pb-2">
+                <button @click="view = 'list'" class="text-slate-600 flex items-center"><i data-lucide="x" class="h-4 w-4 mr-1"></i> Tutup</button>
+                <button @click="window.print()" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 flex items-center">
+                    <i data-lucide="printer" class="h-4 w-4 mr-2"></i> Cetak Sekarang
+                </button>
+            </div>
+
+            <div style="font-family: Arial, sans-serif; font-size: 13px;">
+                <h1 class="text-center font-bold text-lg mb-6 uppercase border-b-2 border-black pb-2">LEMBAR KONTROL KELENGKAPAN DOKUMEN</h1>
+                
+                <table class="mb-6 text-left border-none">
+                    <tr class="uppercase font-semibold"><td class="w-32 py-0.5">Nomor SI</td><td class="w-4">:</td><td class="font-bold" x-text="selectedDoc?.nomorSi"></td></tr>
+                    <tr class="uppercase font-semibold"><td class="w-32 py-0.5">Kegiatan</td><td>:</td><td class="font-normal" x-text="selectedDoc?.kegiatan"></td></tr>
+                    <tr class="uppercase font-semibold"><td class="w-32 py-0.5">Sub Kegiatan</td><td>:</td><td class="font-normal" x-text="selectedDoc?.subKegiatan"></td></tr>
+                    <tr class="uppercase font-semibold"><td class="w-32 py-0.5">Acara</td><td>:</td><td class="font-normal" x-text="selectedDoc?.acara"></td></tr>
+                </table>
+
+                <table class="w-full border-collapse border border-black mb-8">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="border border-black p-2 w-12 text-center">NO</th>
+                            <th class="border border-black p-2 text-center">NAMA DOKUMEN</th>
+                            <th class="border border-black p-2 w-24 text-center">ADA</th>
+                            <th class="border border-black p-2 w-24 text-center">BELUM ADA</th>
+                            <th class="border border-black p-2 text-center">KETERANGAN</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(row, idx) in getPrintChecklistRows()" :key="idx">
+                            <tr>
+                                <td class="border border-black p-2 text-center" x-text="idx + 1"></td>
+                                <td class="border border-black p-2" x-text="row.label"></td>
+                                <td class="border border-black p-2 text-center">
+                                    <span x-show="row.status === 'ada'" class="font-bold text-lg">✓</span>
+                                    <span x-show="row.status === 'tidak_menggunakan'" class="font-bold text-lg">-</span>
+                                </td>
+                                <td class="border border-black p-2 text-center">
+                                    <span x-show="row.status === 'belum_ada'" class="font-bold text-lg">X</span>
+                                    <span x-show="row.status === 'tidak_menggunakan'" class="font-bold text-lg">-</span>
+                                </td>
+                                <td class="border border-black p-2 text-xs italic" x-text="row.keterangan"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div class="flex justify-between mt-12 px-8">
+                    <div class="text-center w-72">
+                        <p>Mengetahui,</p>
+                        <p class="mb-20">PENGGUNA ANGGARAN,</p>
+                        <p class="font-bold underline">BORIS DERRURASMAN, SH.Sp.N.MH.</p>
+                        <p>NIP. 196609091987031004</p>
+                    </div>
+                    <div class="text-center w-72">
+                        <p x-text="'Bogor, ' + formatDate(selectedDoc?.tanggalPengajuan)"></p>
+                        <p class="mb-20">PPTK,</p>
+                        <p class="font-bold underline uppercase" x-text="selectedDoc?.pptkNama"></p>
+                        <p x-text="'NIP. ' + selectedDoc?.pptkNip"></p>
+                    </div>
+                </div>
+
+                <div class="mt-8 text-[10px] italic text-gray-500 print:block hidden">
+                    Dicetak otomatis oleh Aplikasi SI Perjalanan Dinas pada <span x-text="new Date().toLocaleString('id-ID')"></span>
+                </div>
+            </div>
+        </div>
     </main>
 
-    <!-- LOGIN -->
-    <div x-show="view === 'auth'" x-cloak class="min-h-screen flex items-center justify-center bg-slate-200 p-4">
-        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border">
-            <h2 class="text-2xl font-bold text-center text-blue-800 mb-6">SI Perjalanan Dinas</h2>
-            <template x-if="!registerMode">
-                <form @submit.prevent="login()"><div class="mb-4"><label class="block text-sm font-medium">Email</label><input type="email" x-model="loginEmail" class="w-full" required></div><div class="mb-4"><label class="block text-sm font-medium">Password</label><input type="password" x-model="loginPassword" class="w-full" required></div><button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold">Login</button><p class="text-center text-sm mt-4">Belum punya akun? <button type="button" @click="registerMode=true" class="text-blue-600 underline">Registrasi</button></p></form>
-            </template>
-            <template x-if="registerMode">
-                <form @submit.prevent="register()"><div class="mb-3"><label class="block text-sm font-medium">Email</label><input type="email" x-model="regEmail" class="w-full" required></div><div class="mb-3"><label class="block text-sm font-medium">Password</label><input type="password" x-model="regPassword" class="w-full" required></div><div class="mb-3"><label class="block text-sm font-medium">Nama Lengkap</label><input type="text" x-model="regNama" class="w-full" required></div><button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg">Daftar</button><p class="text-center text-sm mt-4">Sudah punya akun? <button type="button" @click="registerMode=false" class="text-blue-600 underline">Login</button></p></form>
-            </template>
-        </div>
-    </div>
-
-    <!-- ADMIN (Kelola User) dengan fitur tambah user -->
-    <div x-show="currentUser && currentUser.isAdmin && view === 'admin'" x-cloak class="p-4">
-        <div class="bg-white shadow-lg rounded-xl border p-5 max-w-5xl mx-auto">
-            <h2 class="text-xl font-bold mb-4">Manajemen User</h2>
-            <div class="mb-6 p-4 bg-slate-50 rounded-lg border">
-                <h3 class="font-semibold mb-2">Tambah User Baru</h3>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <input type="email" x-model="newUserEmail" placeholder="Email" class="w-full">
-                    <input type="password" x-model="newUserPassword" placeholder="Password" class="w-full">
-                    <input type="text" x-model="newUserName" placeholder="Nama Lengkap" class="w-full">
-                    <div class="flex items-center gap-2"><input type="checkbox" x-model="newUserIsAdmin" id="isAdminCheck" class="h-4 w-4"><label for="isAdminCheck">Admin</label></div>
-                    <button @click="createUserByAdmin()" class="bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 col-span-full md:col-span-1">Tambah User</button>
-                </div>
-                <p class="text-xs text-slate-500 mt-2">User akan dibuat menggunakan Firebase REST API (tidak mengganggu sesi admin).</p>
-            </div>
-            <div class="overflow-x-auto"><table class="data-table"><thead><tr><th>Email</th><th>Nama</th><th>Admin</th><th class="text-center">Aksi</th></tr></thead><tbody><template x-for="(user, idx) in userList" :key="user.uid"><tr><td x-text="user.email"></td><td><input type="text" x-model="user.nama" class="w-full"></td><td class="text-center"><input type="checkbox" x-model="user.isAdmin" class="h-4 w-4"></td><td class="text-center"><button @click="updateUser(user)" class="bg-amber-500 text-white px-3 py-1 rounded text-xs mr-1">Update</button><button @click="deleteUser(user.uid)" class="bg-red-500 text-white px-3 py-1 rounded text-xs">Hapus</button></td></tr></template></tbody></table></div>
-            <button @click="view = 'list'" class="mt-4 bg-slate-200 px-4 py-2 rounded-lg text-sm">Kembali ke Aplikasi</button>
-        </div>
-    </div>
-
     <script>
-        function app() {
+        function siApp() {
             return {
-                view: 'auth',
-                currentUser: null,
-                registerMode: false,
-                loginEmail: '', loginPassword: '',
-                regEmail: '', regPassword: '', regNama: '',
-                newUserEmail: '', newUserPassword: '', newUserName: '', newUserIsAdmin: false,
-                userList: [],
+                view: 'form',
                 documents: [],
                 pegawaiList: [],
                 selectedDoc: null,
+                selectedStatTitle: '',
+                selectedStatGroup: '',
                 editIndex: null,
-                sortKey: 'tanggalPengajuan', sortDir: 'desc',
-                searchRekap: '',
-                sortColumnRekap: 'no',
-                sortOrderRekap: 'asc',
-                banks: ['BANK BJB','BANK BJB SYARIAH','BANK BNI','BANK BRI','BANK MANDIRI','BANK BCA','BANK DKI'],
+                displayLimit: 50, // Limit UI agar tidak lag
+                sortKey: 'tanggalPengajuan',
+                sortDir: 'desc',
+                
+                banks: ['BANK BJB', 'BANK BJB SYARIAH', 'BANK BNI', 'BANK BRI', 'BANK MANDIRI', 'BANK BCA', 'BANK DKI'],
+
                 checklistItems: [
                     { id: 'st', label: 'Surat Tugas/Undangan/Koordinasi', isPerPerson: false },
                     { id: 'sp', label: 'Surat Perintah', isPerPerson: false },
@@ -251,104 +1334,726 @@
                     { id: 'tp', label: 'Tiket Pulang', isPerPerson: true },
                     { id: 'bp', label: 'Boarding Pulang', isPerPerson: true }
                 ],
-                formPegawai: { nama: '', bank: '', rekening: '', jabatan: '', akd: '' },
+                
+                formPegawai: { nama: '', bank: '', rekening: '' },
                 editPegawaiIndex: null,
+                
                 formData: {
-                    jenisSi: 'GU', nomorSi: '', kegiatan: 'Pembentukan Perda', subKegiatan: '', jenisKegiatan: 'Koordinasi dan Konsultasi',
-                    asal: 'Kota Bogor', tujuan: '', tglBerangkat: '', tglKembali: '', acara: '', tanggalPengajuan: new Date().toISOString().split('T')[0],
-                    defaultHargaHarian: 0, defaultHargaRepresentatif: 0, defaultHargaTransportasi: 0, defaultHargaTiket: 0, defaultHargaTaksi: 0, defaultHargaHotel: 0,
-                    ketHarian: '', ketRepresentatif: '', ketTransportasi: '', ketTiket: '', ketTaksi: '', ketHotel: '',
-                    noSuratTugas: '', tglSuratTugas: '', noSuratPerintah: '', tglSuratPerintah: '',
-                    pptkNama: 'POPY RACHMAWATI, SH', pptkNip: '197909052010012001',
-                    kelengkapan: {},
-                    items: [{ kodeRekening: '5.1.02.04.01.0001', namaRekening: 'Belanja Perjalanan Dinas Biasa', uraian: '', namaBank: '', nomorRekening: '', hargaHarian: 0, jmlHariHarian: 0, hargaRepresentatif: 0, jmlHariRepresentatif: 0, hargaTransportasi: 0, jmlTransportasi: 1, hargaTiket: 0, jmlTiket: 0, hargaTaksi: 0, jmlTaksi: 0, biayaPenginapan: 0, hargaHotel: 0, jmlHariHotel: 0, isPenginapan30Persen: false, keterangan: '', noSppd: '', jabatan: '', akd: '', isManual: false, kelengkapan: {} }]
+                    jenisSi: 'GU',
+                    nomorSi: '',
+                    kegiatan: 'Pembentukan Perda dan Peraturan Daerah',
+                    subKegiatan: '',
+                    jenisKegiatan: 'Koordinasi dan Konsultasi',
+                    asal: 'Kota Bogor',
+                    tujuan: '',
+                    tglBerangkat: '',
+                    tglKembali: '',
+                    acara: '',
+                    tanggalPengajuan: new Date().toISOString().split('T')[0],
+                    defaultHargaHarian: 0,
+                    defaultHargaRepresentatif: 0,
+                    defaultHargaTransportasi: 0,
+                    defaultHargaTiketBerangkat: 0,
+                    defaultHargaTiketPulang: 0,
+                    defaultHargaTaksi: 0,
+                    defaultHargaHotel: 0,
+                    ketHarian: '',
+                    ketRepresentatif: '',
+                    ketTransportasi: '',
+                    ketTiketBerangkat: '',
+                    ketTiketPulang: '',
+                    ketTaksi: '',
+                    ketHotel: '',
+                    noSuratTugas: '',
+                    tglSuratTugas: '',
+                    noSuratPerintah: '',
+                    tglSuratPerintah: '',
+                    pptkNama: 'POPY RACHMAWATI, SH',
+                    pptkNip: '197909052010012001',
+                    kelengkapan: {
+                        st: 'belum_ada',
+                        sp: 'belum_ada',
+                        sppd: 'belum_ada',
+                        rb: 'belum_ada',
+                        dr: 'belum_ada',
+                        dh: 'belum_ada',
+                        doc: 'belum_ada',
+                        nd: 'belum_ada',
+                        bt: 'belum_ada',
+                        th: 'belum_ada',
+                        inv: 'belum_ada',
+                        tx: 'belum_ada',
+                        tb: 'belum_ada',
+                        bb: 'belum_ada',
+                        tp: 'belum_ada',
+                        bp: 'belum_ada'
+                    },
+                    items: [{
+                        kodeRekening: '5.1.02.04.01.0001',
+                        namaRekening: 'Belanja Perjalanan Dinas Biasa',
+                        uraian: '',
+                        namaBank: '',
+                        nomorRekening: '',
+                        hargaHarian: 0,
+                        jmlHariHarian: 0,
+                        hargaRepresentatif: 0,
+                        jmlHariRepresentatif: 0,
+                        hargaTransportasi: 0,
+                        jmlTransportasi: 1,
+                        hargaTiketBerangkat: 0,
+                        jmlTiketBerangkat: 1,
+                        hargaTiketPulang: 0,
+                        jmlTiketPulang: 1,
+                        hargaTaksi: 0,
+                        jmlTaksi: 0,
+                        biayaPenginapan: 0,
+                        hargaHotel: 0,
+                        jmlHariHotel: 0,
+                        isPenginapan30Persen: false,
+                        keterangan: '',
+                        noSppd: '',
+                        jabatan: '',
+                        akd: '',
+                        isManual: false,
+                        kelengkapan: {},
+                        detailHotel: {},
+                        detailTiketBerangkat: {},
+                        detailTiketPulang: {}
+                    }]
                 },
-
-                get rekapRowsFlat() { const rows = []; this.documents.forEach((doc, docIdx) => { doc.items.forEach((item, itemIdx) => { rows.push({ doc, item, docIdx, itemIdx }); }); }); return rows; },
-                get filteredRekapRows() { let f = this.rekapRowsFlat; if (this.searchRekap.trim()) { const s = this.searchRekap.toLowerCase(); f = f.filter(r => (r.item.uraian && r.item.uraian.toLowerCase().includes(s)) || (r.doc.nomorSi && r.doc.nomorSi.toLowerCase().includes(s)) || (r.doc.kegiatan && r.doc.kegiatan.toLowerCase().includes(s))); } const col = this.sortColumnRekap, ord = this.sortOrderRekap === 'asc' ? 1 : -1; f.sort((a,b) => { let va, vb; if(col==='no') { va = a.docIdx*100 + a.itemIdx; vb = b.docIdx*100 + b.itemIdx; } else if(col==='nomorSi') { va = a.doc.nomorSi||''; vb = b.doc.nomorSi||''; } else if(col==='nama') { va = a.item.uraian||''; vb = b.item.uraian||''; } else if(col==='tanggal') { va = a.doc.tglBerangkat||''; vb = b.doc.tglBerangkat||''; } else { va = this.calculateItemTotal(a.item, a.doc); vb = this.calculateItemTotal(b.item, b.doc); } if (va < vb) return -1*ord; if (va > vb) return 1*ord; return 0; }); return f; },
 
                 async init() {
-                    auth.onAuthStateChanged(async (user) => {
-                        if (user) {
-                            const snap = await database.ref(`users/${user.uid}`).once('value');
-                            let profil = snap.val() || { email: user.email, nama: user.email.split('@')[0], isAdmin: false };
-                            this.currentUser = { uid: user.uid, email: user.email, ...profil };
-                            this.view = 'list';
-                            // Muat data
-                            this.documents = await dbProvider.getAll('docs');
-                            this.pegawaiList = await dbProvider.getAll('pegawai');
-                            this.$nextTick(() => lucide.createIcons());
-                            if (this.currentUser.isAdmin) await this.loadAllUsers();
-                        } else {
-                            this.currentUser = null;
-                            this.view = 'auth';
-                            this.documents = [];
-                            this.pegawaiList = [];
+                    this.documents = await dbProvider.getAll('docs');
+                    this.pegawaiList = await dbProvider.getAll('pegawai');
+
+                    // Re-init lucide icons setelah render
+                    this.$watch('view', () => {
+                        this.$nextTick(() => lucide.createIcons());
+                    });
+                    lucide.createIcons();
+                },
+
+                resetForm() {
+                    this.editIndex = null;
+                    this.formData.nomorSi = '';
+                    this.formData.kegiatan = 'Pembentukan Perda dan Peraturan Daerah';
+                    this.formData.subKegiatan = '';
+                    this.formData.jenisKegiatan = 'Koordinasi dan Konsultasi';
+                    this.formData.asal = 'Kota Bogor';
+                    this.formData.tujuan = '';
+                    this.formData.tglBerangkat = '';
+                    this.formData.tglKembali = '';
+                    this.formData.acara = '';
+                    this.formData.defaultHargaHarian = 0;
+                    this.formData.defaultHargaRepresentatif = 0;
+                    this.formData.defaultHargaTransportasi = 0;
+                    this.formData.defaultHargaTiketBerangkat = 0;
+                    this.formData.defaultHargaTiketPulang = 0;
+                    this.formData.defaultHargaTaksi = 0;
+                    this.formData.defaultHargaHotel = 0;
+                    this.formData.ketHarian = '';
+                    this.formData.ketRepresentatif = '';
+                    this.formData.ketTransportasi = '';
+                    this.formData.ketTiketBerangkat = '';
+                    this.formData.ketTiketPulang = '';
+                    this.formData.ketTaksi = '';
+                    this.formData.ketHotel = '';
+                    this.formData.noSuratTugas = '';
+                    this.formData.tglSuratTugas = '';
+                    this.formData.noSuratPerintah = '';
+                    this.formData.tglSuratPerintah = '';
+                    this.formData.pptkNama = 'POPY RACHMAWATI, SH';
+                    this.formData.pptkNip = '197909052010012001';
+                    this.formData.kelengkapan = {};
+                    
+                    // Inisialisasi ulang item default agar bersih
+                    this.formData.defaultHargaHarian = 0;
+                    this.formData.defaultHargaRepresentatif = 0;
+                    
+                    this.checklistItems.filter(item => !item.isPerPerson).forEach(item => { // Only global items
+                        this.formData.kelengkapan[item.id] = 'belum_ada';
+                    });
+                    this.formData.items = [{
+                        kodeRekening: '5.1.02.04.01.0001', namaRekening: 'Belanja Perjalanan Dinas Biasa', uraian: '', namaBank: '', nomorRekening: '',
+                        jmlHariHarian: 0, jmlHariRepresentatif: 0,
+                        jmlTransportasi: 1,
+                        hargaTiketBerangkat: 0, jmlTiketBerangkat: 1,
+                        hargaTiketPulang: 0, jmlTiketPulang: 1,
+                        hargaTaksi: 0, jmlTaksi: 0,
+                        biayaPenginapan: 0, jmlHariHotel: 0,
+                        isPenginapan30Persen: false,
+                        keterangan: '',
+                        noSppd: '',
+                        jabatan: '',
+                        akd: '',
+                        isManual: false,
+                        kelengkapan: {},
+                        detailHotel: {},
+                        detailTiketBerangkat: {},
+                        detailTiketPulang: {}
+                    }];
+                },
+
+                countChecked(doc) {
+                    let count = 0;
+                    if (doc.kelengkapan) {
+                        count += this.checklistItems.filter(i => !i.isPerPerson && doc.kelengkapan[i.id] === 'ada').length;
+                    }
+                    this.checklistItems.filter(i => i.isPerPerson).forEach(item => {
+                        count += doc.items.filter(p => p.kelengkapan && p.kelengkapan[item.id] === 'ada').length;
+                    });
+                    return count;
+                },
+
+                countMissing(doc) {
+                    let count = 0;
+                    if (doc.kelengkapan) {
+                        count += this.checklistItems.filter(i => !i.isPerPerson && doc.kelengkapan[i.id] === 'belum_ada').length;
+                    }
+                    this.checklistItems.filter(i => i.isPerPerson).forEach(item => {
+                        count += doc.items.filter(p => p.kelengkapan && p.kelengkapan[item.id] === 'belum_ada').length;
+                    });
+                    return count;
+                },
+
+                calculateProgress(doc) {
+                    const ada = this.countChecked(doc);
+                    const kurang = this.countMissing(doc);
+                    const total = ada + kurang;
+                    return total === 0 ? 100 : Math.round((ada / total) * 100);
+                },
+
+                getDocKeterangan(doc) {
+                    let missingInfo = [];
+                    this.checklistItems.filter(i => i.isPerPerson).forEach(item => {
+                        const missingPeople = doc.items
+                            .filter(p => p.kelengkapan && p.kelengkapan[item.id] === 'belum_ada')
+                            .map(p => p.uraian || 'Tanpa Nama');
+                        if (missingPeople.length > 0) {
+                            missingInfo.push(`${item.label}: ${missingPeople.join(', ')}`);
                         }
                     });
+                    return missingInfo.join('; ');
                 },
-                async loadAllUsers() { const snap = await database.ref('users').once('value'); const users = snap.val(); this.userList = users ? Object.entries(users).map(([uid, data]) => ({ uid, ...data })) : []; },
-                async login() { try { await auth.signInWithEmailAndPassword(this.loginEmail, this.loginPassword); } catch (err) { alert('Login gagal: '+err.message); } },
-                async register() { try { const cred = await auth.createUserWithEmailAndPassword(this.regEmail, this.regPassword); await database.ref(`users/${cred.user.uid}`).set({ email: this.regEmail, nama: this.regNama, isAdmin: false }); alert('Registrasi berhasil'); this.registerMode = false; } catch (err) { alert('Gagal: '+err.message); } },
-                async updateUser(user) { if (!this.currentUser.isAdmin) return; await database.ref(`users/${user.uid}`).update({ nama: user.nama, isAdmin: user.isAdmin }); await this.loadAllUsers(); },
-                async deleteUser(uid) { if(confirm('Hapus user? Data di Authentication tidak otomatis terhapus. Hapus manual di Firebase Console jika perlu.')){ await database.ref(`users/${uid}`).remove(); await this.loadAllUsers(); } },
-                async createUserByAdmin() {
-                    if (!this.currentUser.isAdmin) return alert('Hanya admin');
-                    if (!this.newUserEmail || !this.newUserPassword) return alert('Email dan password harus diisi');
-                    try {
-                        // Gunakan Firebase REST API untuk membuat user tanpa logout admin
-                        const apiKey = firebaseConfig.apiKey;
-                        const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: this.newUserEmail, password: this.newUserPassword, returnSecureToken: true })
-                        });
-                        const data = await response.json();
-                        if (!response.ok) throw new Error(data.error?.message || 'Gagal membuat user');
-                        const uid = data.localId;
-                        // Simpan profil user di database
-                        await database.ref(`users/${uid}`).set({
-                            email: this.newUserEmail,
-                            nama: this.newUserName || this.newUserEmail.split('@')[0],
-                            isAdmin: this.newUserIsAdmin
-                        });
-                        alert(`User ${this.newUserEmail} berhasil dibuat`);
-                        this.newUserEmail = ''; this.newUserPassword = ''; this.newUserName = ''; this.newUserIsAdmin = false;
-                        await this.loadAllUsers();
-                    } catch (err) { alert('Gagal membuat user: '+err.message); }
+
+                calculateDays(start, end) {
+                    if (!start || !end) return 0;
+                    const d1 = new Date(start);
+                    const d2 = new Date(end);
+                    const diff = Math.abs(d2 - d1);
+                    const days = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+                    return days > 0 ? days : 0;
                 },
-                logout() { auth.signOut(); },
-                resetForm() { /* sama seperti sebelumnya */ this.editIndex = null; this.formData = { jenisSi: 'GU', nomorSi: '', kegiatan: 'Pembentukan Perda', subKegiatan: '', jenisKegiatan: 'Koordinasi dan Konsultasi', asal: 'Kota Bogor', tujuan: '', tglBerangkat: '', tglKembali: '', acara: '', tanggalPengajuan: new Date().toISOString().split('T')[0], defaultHargaHarian: 0, defaultHargaRepresentatif: 0, defaultHargaTransportasi: 0, defaultHargaTiket: 0, defaultHargaTaksi: 0, defaultHargaHotel: 0, ketHarian: '', ketRepresentatif: '', ketTransportasi: '', ketTiket: '', ketTaksi: '', ketHotel: '', noSuratTugas: '', tglSuratTugas: '', noSuratPerintah: '', tglSuratPerintah: '', pptkNama: 'POPY RACHMAWATI, SH', pptkNip: '197909052010012001', kelengkapan: {}, items: [{ kodeRekening: '5.1.02.04.01.0001', namaRekening: 'Belanja Perjalanan Dinas Biasa', uraian: '', namaBank: '', nomorRekening: '', hargaHarian: 0, jmlHariHarian: 0, hargaRepresentatif: 0, jmlHariRepresentatif: 0, hargaTransportasi: 0, jmlTransportasi: 1, hargaTiket: 0, jmlTiket: 0, hargaTaksi: 0, jmlTaksi: 0, biayaPenginapan: 0, hargaHotel: 0, jmlHariHotel: 0, isPenginapan30Persen: false, keterangan: '', noSppd: '', jabatan: '', akd: '', isManual: false, kelengkapan: {} }] }; this.checklistItems.filter(i=>!i.isPerPerson).forEach(i=>this.formData.kelengkapan[i.id]='belum_ada'); },
-                calculateDays(s,e) { if(!s||!e) return 0; return Math.ceil(Math.abs(new Date(e)-new Date(s))/(1000*60*60*24))+1; },
-                addItem() { this.formData.items.push({ ...this.formData.items[0], hargaHarian: this.formData.defaultHargaHarian, hargaRepresentatif: this.formData.defaultHargaRepresentatif, hargaTransportasi: this.formData.defaultHargaTransportasi, hargaTiket: this.formData.defaultHargaTiket, hargaTaksi: this.formData.defaultHargaTaksi, hargaHotel: this.formData.defaultHargaHotel, jmlTransportasi:1, isPenginapan30Persen:false, kelengkapan:{} }); },
-                removeItem(i) { if(this.formData.items.length>1) this.formData.items.splice(i,1); },
-                getHotelValue(item,doc) { const base=(Number(item.hargaHotel||doc.defaultHargaHotel)||0)*(Number(item.jmlHariHotel)||0); return item.isPenginapan30Persen?base*0.3:base; },
-                calculateItemTotal(item,doc) { const h=(item.hargaHarian||doc.defaultHargaHarian||0)*(item.jmlHariHarian||0); const r=(item.hargaRepresentatif||doc.defaultHargaRepresentatif||0)*(item.jmlHariRepresentatif||0); const tr=(item.hargaTransportasi||doc.defaultHargaTransportasi||0)*(item.jmlTransportasi||0); const ti=(item.hargaTiket||doc.defaultHargaTiket||0)*(item.jmlTiket||0); const ta=(item.hargaTaksi||doc.defaultHargaTaksi||0)*(item.jmlTaksi||0); return h+r+tr+ti+ta+this.getHotelValue(item,doc); },
-                grandTotal() { return this.formData.items.reduce((s,i)=>s+this.calculateItemTotal(i,this.formData),0); },
-                autofillPegawai(i) { const nama=this.formData.items[i].uraian; const p=this.pegawaiList.find(x=>x.nama.toLowerCase()===nama.toLowerCase()); if(p){ this.formData.items[i].namaBank=p.bank; this.formData.items[i].nomorRekening=p.rekening; this.formData.items[i].jabatan=p.jabatan||''; this.formData.items[i].akd=p.akd||''; } },
-                async quickSavePegawai(i) { const item=this.formData.items[i]; if(!item.uraian) return; const newP={ id:Date.now()+'_'+Math.random().toString(36).substring(2,8), nama:item.uraian, bank:item.namaBank||'', rekening:item.nomorRekening||'', jabatan:item.jabatan||'', akd:item.akd||'' }; await dbProvider.save('pegawai',newP); this.pegawaiList.push(newP); item.isManual=false; this.$nextTick(()=>lucide.createIcons()); },
-                async savePegawai() { if(!this.formPegawai.nama) return; if(this.editPegawaiIndex!==null){ const p=this.pegawaiList[this.editPegawaiIndex]; const upd={...this.formPegawai, id:p.id}; await dbProvider.save('pegawai',upd); this.pegawaiList[this.editPegawaiIndex]=upd; this.editPegawaiIndex=null; }else{ const newP={...this.formPegawai, id:Date.now()+'_'+Math.random().toString(36).substring(2,8)}; await dbProvider.save('pegawai',newP); this.pegawaiList.push(newP); } this.formPegawai={nama:'',bank:'',rekening:'',jabatan:'',akd:''}; this.$nextTick(()=>lucide.createIcons()); },
-                editPegawai(i) { this.editPegawaiIndex=i; this.formPegawai={...this.pegawaiList[i]}; },
-                async deletePegawai(i) { if(confirm('Hapus pegawai?')){ const p=this.pegawaiList[i]; await dbProvider.remove('pegawai',p.id); this.pegawaiList.splice(i,1); } },
-                async submitForm() { const newDoc=JSON.parse(JSON.stringify(this.formData)); newDoc.totalKeseluruhan=this.grandTotal(); newDoc.jumlahHari=this.calculateDays(newDoc.tglBerangkat,newDoc.tglKembali); newDoc.id=newDoc.id||(Date.now()+'_'+Math.random().toString(36).substring(2,8)); const now=new Date().toISOString(); const userIdentity=this.currentUser?.email||this.currentUser?.nama||'unknown'; const target=this.documents.findIndex(d=>d.id===newDoc.id); if(this.editIndex!==null && target!==-1){ const old=this.documents[target]; newDoc.createdBy=old.createdBy||userIdentity; newDoc.createdAt=old.createdAt||now; newDoc.updatedBy=userIdentity; newDoc.updatedAt=now; this.documents[target]=newDoc; await dbProvider.save('docs',newDoc); alert('Data diperbarui'); }else{ newDoc.createdBy=userIdentity; newDoc.createdAt=now; await dbProvider.save('docs',newDoc); this.documents.unshift(newDoc); alert('Data disimpan'); } this.resetForm(); this.view='list'; },
-                async deleteDoc(d) { if(confirm('Hapus dokumen?')){ await dbProvider.remove('docs',d.id); this.documents=this.documents.filter(x=>x.id!==d.id); } },
-                printDoc(d) { this.selectedDoc=d; this.view='print'; },
-                printChecklist(d) { this.selectedDoc=d; this.view='printChecklist'; },
-                printStat(t,g) { this.view='printStat'; },
-                editDoc(docItem) { const doc=JSON.parse(JSON.stringify(docItem)); if(!doc.defaultHargaHarian && doc.items?.[0]?.hargaHarian) doc.defaultHargaHarian=doc.items[0].hargaHarian; if(!doc.defaultHargaRepresentatif && doc.items?.[0]?.hargaRepresentatif) doc.defaultHargaRepresentatif=doc.items[0].hargaRepresentatif; if(!doc.defaultHargaTransportasi && doc.items?.[0]?.biayaTransportasi) { doc.defaultHargaTransportasi=doc.items[0].biayaTransportasi; doc.items.forEach(i=>i.jmlTransportasi=1); } if(!doc.defaultHargaTiket && doc.items?.[0]?.biayaTiket){ doc.defaultHargaTiket=doc.items[0].biayaTiket; doc.items.forEach(i=>i.jmlTiket=1); } if(!doc.defaultHargaTaksi && doc.items?.[0]?.biayaTaksi){ doc.defaultHargaTaksi=doc.items[0].biayaTaksi; doc.items.forEach(i=>i.jmlTaksi=1); } if(!doc.defaultHargaHotel && doc.items?.[0]?.hargaHotel) doc.defaultHargaHotel=doc.items[0].hargaHotel; if(!doc.noSuratTugas && doc.items?.[0]?.noSuratTugas){ doc.noSuratTugas=doc.items[0].noSuratTugas; doc.tglSuratTugas=doc.items[0].tglSuratTugas; } if(doc.items) doc.items.forEach(item=>{ item.isManual=false; if(!item.kelengkapan) item.kelengkapan={}; if(item.uraian && this.pegawaiList.length){ const match=this.pegawaiList.find(p=>p.nama.toLowerCase()===item.uraian.trim().toLowerCase()); if(match) item.uraian=match.nama; } this.checklistItems.filter(ci=>ci.isPerPerson).forEach(ci=>{ if(item.kelengkapan[ci.id]===undefined) item.kelengkapan[ci.id]=null; }); }); if(!doc.kelengkapan) doc.kelengkapan={}; this.checklistItems.forEach(item=>{ if(!item.isPerPerson && doc.kelengkapan[item.id]===undefined) doc.kelengkapan[item.id]=null; }); this.editIndex=this.documents.findIndex(d=>d.id===doc.id); if(this.editIndex===-1) this.editIndex=this.documents.indexOf(docItem); this.formData=doc; this.view='form'; },
-                getGroupedDocs() { const groups={}; const sorted=[...this.documents].sort((a,b)=>{ let va=a[this.sortKey]||'', vb=b[this.sortKey]||''; if(this.sortKey==='totalKeseluruhan'){ va=Number(va); vb=Number(vb); } if(va<vb) return this.sortDir==='asc'?-1:1; if(va>vb) return this.sortDir==='asc'?1:-1; return 0; }); sorted.forEach(doc=>{ const date=new Date(doc.tanggalPengajuan); const mName=date.toLocaleDateString('id-ID',{month:'long',year:'numeric'}); if(!groups[mName]) groups[mName]={name:mName,docs:[],total:0,subs:{},time:date.getTime()}; groups[mName].docs.push(doc); groups[mName].total+=doc.totalKeseluruhan||0; const sub=doc.subKegiatan||'Tanpa Sub'; if(!groups[mName].subs[sub]) groups[mName].subs[sub]={count:0,total:0}; groups[mName].subs[sub].count++; groups[mName].subs[sub].total+=doc.totalKeseluruhan||0; }); return Object.values(groups).sort((a,b)=>b.time-a.time).slice(0,50); },
-                sortBy(k) { if(this.sortKey===k) this.sortDir=this.sortDir==='asc'?'desc':'asc'; else{ this.sortKey=k; this.sortDir='asc'; } },
-                formatCurrency(v) { return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(v||0); },
-                formatDate(d) { if(!d) return ''; return new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); },
-                formatDateTime(d) { if(!d) return ''; return new Date(d).toLocaleString('id-ID'); },
-                backupData() { const data={documents:this.documents, pegawai:this.pegawaiList}; const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})); a.download=`backup_si_${new Date().toISOString().split('T')[0]}.json`; a.click(); },
-                async restoreData(e) { const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=async ev=>{ try{ const imp=JSON.parse(ev.target.result); let docs=imp.documents||imp, peg=imp.pegawai||[]; let fixedDocs=[], fixedPeg=[]; for(let d of docs){ let newId=sanitizeId(d.id); if(newId!==d.id) d.id=newId; fixedDocs.push(d); } for(let p of peg){ let newId=sanitizeId(p.id); if(newId!==p.id) p.id=newId; fixedPeg.push(p); } if(confirm(`Restore ${fixedDocs.length} dokumen?`)){ for(let d of fixedDocs) await dbProvider.save('docs',d); for(let p of fixedPeg) await dbProvider.save('pegawai',p); this.documents=await dbProvider.getAll('docs'); this.pegawaiList=await dbProvider.getAll('pegawai'); alert('Restore berhasil!'); } }catch(err){ alert('Gagal restore: '+err.message); } }; reader.readAsText(file); },
-                getAvailablePegawai(idx){ const cur=this.formData.items[idx]?.uraian; const used=this.formData.items.filter((_,i)=>i!==idx).map(i=>i.uraian).filter(n=>n); return this.pegawaiList.filter(p=>!used.includes(p.nama) || p.nama===cur); },
-                countChecked(doc){ let c=0; if(doc.kelengkapan) c+=this.checklistItems.filter(i=>!i.isPerPerson && doc.kelengkapan[i.id]==='ada').length; this.checklistItems.filter(i=>i.isPerPerson).forEach(i=>{ c+=doc.items.filter(p=>p.kelengkapan && p.kelengkapan[i.id]==='ada').length; }); return c; },
-                countMissing(doc){ let c=0; if(doc.kelengkapan) c+=this.checklistItems.filter(i=>!i.isPerPerson && doc.kelengkapan[i.id]==='belum_ada').length; this.checklistItems.filter(i=>i.isPerPerson).forEach(i=>{ c+=doc.items.filter(p=>p.kelengkapan && p.kelengkapan[i.id]==='belum_ada').length; }); return c; },
-                calculateProgress(doc){ const a=this.countChecked(doc), b=this.countMissing(doc); const t=a+b; return t===0?100:Math.round((a/t)*100); },
-                getDocKeterangan(doc){ let m=[]; this.checklistItems.filter(i=>i.isPerPerson).forEach(i=>{ const p=doc.items.filter(p=>p.kelengkapan && p.kelengkapan[i.id]==='belum_ada').map(p=>p.uraian||'?'); if(p.length) m.push(`${i.label}: ${p.join(', ')}`); }); return m.join('; '); },
-                getPrintChecklistRows(){ if(!this.selectedDoc) return []; const doc=this.selectedDoc; const rows=[]; const isKunker=(doc.acara||"").toLowerCase().includes("kunjungan kerja"); const isLuarDaerah=isKunker||!/(jawa barat|jabar|banten)/i.test(doc.tujuan||""); const isReimburse=/(reimbuse|reimbus|rembes|reimburse|tagihan)/i.test(doc.acara||""); const noST=doc.noSuratTugas||""; this.checklistItems.forEach(item=>{ let status=item.isPerPerson?"":doc.kelengkapan?.[item.id]; const isSelected=item.isPerPerson?doc.items.some(p=>p.kelengkapan?.[item.id]==='ada'||p.kelengkapan?.[item.id]==='belum_ada'):(doc.kelengkapan?.[item.id]==='ada'||doc.kelengkapan?.[item.id]==='belum_ada'); if(item.isPerPerson && !isSelected) return; let keterangan=status==='tidak_menggunakan'?'tidak menggunakan':''; const idsTiket=['tb','bb','tp','bp']; if(idsTiket.includes(item.id) && !isLuarDaerah){ status='tidak_menggunakan'; keterangan='tidak menggunakan'; } if(isReimburse && !item.isPerPerson){ status='tidak_menggunakan'; const idsUmum=['st','sp','sppd','rb','dr','dh','doc','nd']; if(idsUmum.includes(item.id) && noST) keterangan=(keterangan?keterangan+" | ":"")+"No. ST: "+noST; } if(item.id==='st' && status==='ada' && doc.noSuratTugas) keterangan=(keterangan?keterangan+" | ":"")+"No: "+doc.noSuratTugas+(doc.tglSuratTugas?" tgl "+this.formatDate(doc.tglSuratTugas):""); if(item.id==='sp' && status==='ada' && doc.noSuratPerintah) keterangan=(keterangan?keterangan+" | ":"")+"No: "+doc.noSuratPerintah+(doc.tglSuratPerintah?" tgl "+this.formatDate(doc.tglSuratPerintah):""); if(!item.isPerPerson) rows.push({label:item.label,status,keterangan}); else{ if(status==='tidak_menggunakan'||status==='belum_ada') rows.push({label:item.label,status,keterangan}); else{ const missing=doc.items.filter(p=>p.kelengkapan?.[item.id]==='belum_ada').map(p=>p.uraian||'?'); rows.push({label:item.label,status:missing.length===0?'ada':'belum_ada',keterangan:(keterangan?keterangan+" | ":"")+(missing.length>0?'Belum ada: '+missing.join(', '):'')}); } } }); return rows; }
+
+                addItem() {
+                    this.formData.items.push({
+                        kodeRekening: '5.1.02.04.01.0001', namaRekening: 'Belanja Perjalanan Dinas Biasa', uraian: '', namaBank: '', nomorRekening: '',
+                        hargaHarian: this.formData.defaultHargaHarian || 0, jmlHariHarian: 0,
+                        hargaRepresentatif: this.formData.defaultHargaRepresentatif || 0, jmlHariRepresentatif: 0,
+                        hargaTransportasi: this.formData.defaultHargaTransportasi || 0, jmlTransportasi: 1,
+                        hargaTiketBerangkat: this.formData.defaultHargaTiketBerangkat || 0, jmlTiketBerangkat: 1,
+                        hargaTiketPulang: this.formData.defaultHargaTiketPulang || 0, jmlTiketPulang: 1,
+                        hargaTaksi: this.formData.defaultHargaTaksi || 0, jmlTaksi: 0,
+                        biayaPenginapan: 0, hargaHotel: this.formData.defaultHargaHotel || 0, jmlHariHotel: 0,
+                        isPenginapan30Persen: false,
+                        keterangan: '',
+                        noSuratTugas: '',
+                        tglSuratTugas: '',
+                        noSppd: '',
+                        jabatan: '',
+                        akd: '',
+                        isManual: false,
+                        kelengkapan: {},
+                        detailHotel: {},
+                        detailTiketBerangkat: {},
+                        detailTiketPulang: {}
+                    });
+                },
+
+                removeItem(index) {
+                    if (this.formData.items.length > 1) {
+                        this.formData.items.splice(index, 1);
+                    }
+                },
+
+                getPrintChecklistRows() {
+                    if (!this.selectedDoc) return [];
+                    
+                    let rows = [];
+                    const doc = this.selectedDoc;
+                    
+                    // Deteksi Wilayah & Kunker (Luar Jabar/Banten atau kata Kunjungan Kerja)
+                    const isKunker = (doc.acara || "").toLowerCase().includes("kunjungan kerja");
+                    const isLuarDaerah = isKunker || !/(jawa barat|jabar|banten)/i.test(doc.tujuan || "");
+                    
+                    // Deteksi Reimburse / Tagihan
+                    const isReimburse = /(reimbuse|reimbus|rembes|reimburse|tagihan)/i.test(doc.acara || "");
+                    const noST = doc.noSuratTugas || "";
+
+                    const ids10to16 = ['th', 'inv', 'tx', 'tb', 'bb', 'tp', 'bp'];
+
+                    this.checklistItems.forEach(item => {
+                        let status = item.isPerPerson ? "" : doc.kelengkapan?.[item.id];
+
+                        // Cek apakah item "dipilih" (diisi ada/belum_ada oleh user)
+                        const isSelected = item.isPerPerson 
+                            ? doc.items.some(p => p.kelengkapan?.[item.id] === 'ada' || p.kelengkapan?.[item.id] === 'belum_ada')
+                            : (doc.kelengkapan?.[item.id] === 'ada' || doc.kelengkapan?.[item.id] === 'belum_ada');
+
+                        // Filter Dokumen Peserta: Tampilkan hanya jika dipilih (Ada atau Belum Ada)
+                        if (item.isPerPerson && !isSelected) return;
+
+                        let keterangan = status === 'tidak_menggunakan' ? 'tidak menggunakan' : '';
+
+                        // Aturan 1: No 13-16 (Tiket & Boarding) - Hanya muncul jika Luar Daerah/Kunker
+                        const idsTiket = ['tb', 'bb', 'tp', 'bp'];
+                        if (idsTiket.includes(item.id) && !isLuarDaerah) {
+                            status = 'tidak_menggunakan';
+                            keterangan = 'tidak menggunakan';
+                        }
+
+                        // Jika ada kata reimbuse/reimbus/rembes, paksa status SI (Global) jadi (-)
+                        if (isReimburse && !item.isPerPerson) {
+                            status = 'tidak_menggunakan';
+
+                            // Tambahkan info No ST jika ada untuk baris umum
+                            const idsUmum = ['st', 'sp', 'sppd', 'rb', 'dr', 'dh', 'doc', 'nd'];
+                            if (idsUmum.includes(item.id) && noST) {
+                                keterangan = (keterangan && keterangan !== 'tidak menggunakan' ? keterangan + " | " : "") + "No. ST: " + noST;
+                            }
+                        }
+
+                      // Tambahkan keterangan Nomor/Tanggal jika ADA
+                      if (item.id === 'st' && status === 'ada' && doc.noSuratTugas) {
+                          keterangan = (keterangan && keterangan !== 'tidak menggunakan' ? keterangan + " | " : "") + "No: " + doc.noSuratTugas + (doc.tglSuratTugas ? " tgl " + this.formatDate(doc.tglSuratTugas) : "");
+                      }
+                      if (item.id === 'sp' && status === 'ada' && doc.noSuratPerintah) {
+                          keterangan = (keterangan && keterangan !== 'tidak menggunakan' ? keterangan + " | " : "") + "No: " + doc.noSuratPerintah + (doc.tglSuratPerintah ? " tgl " + this.formatDate(doc.tglSuratPerintah) : "");
+                      }
+
+                        if (!item.isPerPerson) {
+                            rows.push({ label: item.label, status, keterangan });
+                        } else {
+                            if (status === 'tidak_menggunakan' || status === 'belum_ada') {
+                                rows.push({ label: item.label, status, keterangan });
+                            } else {
+                                const missing = doc.items.filter(p => p.kelengkapan?.[item.id] === 'belum_ada').map(p => p.uraian || 'Tanpa Nama');
+                                rows.push({ 
+                                    label: item.label, 
+                                    status: missing.length === 0 ? 'ada' : 'belum_ada', // Overall status for per-person item
+                                    keterangan: (keterangan ? keterangan + " | " : "") + (missing.length > 0 ? 'Belum ada: ' + missing.join(', ') : '')
+                                });
+                            }
+                        }
+                    });
+                    return rows;
+                },
+
+                getAvailablePegawai(currentIndex) {
+                    const currentName = this.formData.items[currentIndex]?.uraian;
+                    const usedNames = this.formData.items
+                        .filter((_, idx) => idx !== currentIndex)
+                        .map(item => item.uraian)
+                        .filter(name => name && name !== "");
+                    
+                    // Mengembalikan daftar pegawai yang belum dipilih, 
+                    // ATAU pegawai yang memang sedang terpilih di baris ini (agar nama tidak hilang saat edit)
+                    return this.pegawaiList.filter(p => !usedNames.includes(p.nama) || p.nama === currentName);
+                },
+
+                getHotelValue(item, doc = this.formData) {
+                    const base = (Number(item.hargaHotel || doc.defaultHargaHotel) || 0) * (Number(item.jmlHariHotel) || 0);
+                    return item.isPenginapan30Persen ? base * 0.3 : base;
+                },
+
+                calculateItemTotal(item, doc = this.formData) {
+                    const harian = (Number(item.hargaHarian || doc.defaultHargaHarian) || 0) * (Number(item.jmlHariHarian) || 0);
+                    const representatif = (Number(item.hargaRepresentatif || doc.defaultHargaRepresentatif) || 0) * (Number(item.jmlHariRepresentatif) || 0);
+                    const transportasi = (Number(item.hargaTransportasi || doc.defaultHargaTransportasi) || 0) * (Number(item.jmlTransportasi) || 0);
+                    const tiketBerangkat = (Number(item.hargaTiketBerangkat || doc.defaultHargaTiketBerangkat) || 0) * (Number(item.jmlTiketBerangkat) || 0);
+                    const tiketPulang = (Number(item.hargaTiketPulang || doc.defaultHargaTiketPulang) || 0) * (Number(item.jmlTiketPulang) || 0);
+                    const taksi = (Number(item.hargaTaksi || doc.defaultHargaTaksi) || 0) * (Number(item.jmlTaksi) || 0);
+
+                    return harian + 
+                           representatif + 
+                           transportasi + 
+                           tiketBerangkat + tiketPulang + 
+                           taksi +
+                           this.getHotelValue(item, doc);
+                },
+
+                grandTotal() {
+                    return this.formData.items.reduce((sum, item) => sum + this.calculateItemTotal(item, this.formData), 0);
+                },
+
+                autofillPegawai(index) {
+                    const nama = this.formData.items[index].uraian;
+                    const p = this.pegawaiList.find(x => x.nama.toLowerCase() === nama.toLowerCase());
+                    if (p) {
+                        this.formData.items[index].namaBank = p.bank;
+                        this.formData.items[index].nomorRekening = p.rekening;
+                        this.formData.items[index].jabatan = p.jabatan || '';
+                        this.formData.items[index].akd = p.akd || '';
+                    }
+                },
+
+                async quickSavePegawai(index) {
+                    const item = this.formData.items[index];
+                    if (!item.uraian) return;
+                    
+                    const newPegawai = {
+                        id: Date.now(),
+                        nama: item.uraian,
+                        bank: item.namaBank || '',
+                        rekening: item.nomorRekening || '',
+                        jabatan: item.jabatan || '',
+                        akd: item.akd || ''
+                    };
+                    
+                    await dbProvider.save('pegawai', newPegawai);
+                    this.pegawaiList.push(newPegawai);
+                    item.isManual = false;
+                    this.$nextTick(() => lucide.createIcons());
+                },
+
+                async savePegawai() {
+                    if (!this.formPegawai.nama) return;
+                    
+                    if (this.editPegawaiIndex !== null) {
+                        // Mode Edit
+                        const p = this.pegawaiList[this.editPegawaiIndex];
+                        const updated = { ...this.formPegawai, id: p.id };
+                        await dbProvider.save('pegawai', updated);
+                        this.pegawaiList[this.editPegawaiIndex] = updated;
+                        this.editPegawaiIndex = null;
+                    } else {
+                        // Mode Tambah Baru
+                        const newPegawai = { ...this.formPegawai, id: Date.now() };
+                        await dbProvider.save('pegawai', newPegawai);
+                        this.pegawaiList.push(newPegawai);
+                    }
+                    
+                    this.formPegawai = { nama: '', bank: '', rekening: '', jabatan: '', akd: '' };
+                    this.$nextTick(() => lucide.createIcons());
+                },
+
+                editPegawai(index) {
+                    this.editPegawaiIndex = index;
+                    this.formPegawai = { ...this.pegawaiList[index] };
+                },
+
+                async deletePegawai(index) {
+                    if (confirm('Hapus data pegawai ini?')) {
+                        const p = this.pegawaiList[index];
+                        await dbProvider.remove('pegawai', p.id);
+                        this.pegawaiList.splice(index, 1);
+                    }
+                },
+
+                async submitForm() {
+                    const newDoc = JSON.parse(JSON.stringify(this.formData));
+                    newDoc.totalKeseluruhan = this.grandTotal();
+                    newDoc.jumlahHari = this.calculateDays(newDoc.tglBerangkat, newDoc.tglKembali);
+                    
+                    // Cari index data di array master berdasarkan ID untuk memastikan ketepatan update
+                    const targetIndex = this.documents.findIndex(d => d.id === newDoc.id);
+                    
+                    if (this.editIndex !== null && targetIndex !== -1) {
+                        // Hanya perbarui array master setelah data divalidasi
+                        this.documents[targetIndex] = newDoc;
+                        await dbProvider.save('docs', newDoc);
+                        alert('Data berhasil diperbarui!');
+                    } else {
+                        newDoc.createdAt = new Date().toISOString();
+                        newDoc.id = Date.now();
+                        await dbProvider.save('docs', newDoc);
+                        this.documents.unshift(newDoc);
+                        alert('Data berhasil disimpan ke Rekap!');
+                    }
+                    
+                    this.resetForm();
+                    this.view = 'list';
+                },
+
+
+                async deleteDoc(docItem) {
+                    if (confirm('Hapus dokumen ini dari rekap?')) {
+                        await dbProvider.remove('docs', docItem.id);
+                        const idx = this.documents.indexOf(docItem);
+                        this.documents.splice(idx, 1);
+                    }
+                },
+
+                printDoc(docItem) {
+                    this.selectedDoc = docItem;
+                    this.view = 'print';
+                },
+
+                printChecklist(docItem) {
+                    this.selectedDoc = docItem;
+                    this.view = 'printChecklist';
+                },
+
+                printStat(title, group) {
+                    this.selectedStatTitle = title;
+                    this.selectedStatGroup = group;
+                    this.view = 'printStat';
+                },
+
+                editDoc(docItem) {
+                    const doc = JSON.parse(JSON.stringify(docItem));
+                    
+                    // Kompatibilitas data lama: ambil harga dari item pertama jika global kosong
+                    if (!doc.defaultHargaHarian && doc.items?.[0]?.hargaHarian) {
+                        doc.defaultHargaHarian = doc.items[0].hargaHarian;
+                    }
+                    if (!doc.defaultHargaRepresentatif && doc.items?.[0]?.hargaRepresentatif) {
+                        doc.defaultHargaRepresentatif = doc.items[0].hargaRepresentatif;
+                    }
+                    if (!doc.defaultHargaTransportasi && doc.items?.[0]?.biayaTransportasi) {
+                        doc.defaultHargaTransportasi = doc.items[0].biayaTransportasi;
+                        doc.items.forEach(i => i.jmlTransportasi = 1);
+                    }
+                    // Migrasi data lama: jika ada hargaTiket, salin ke kedua tiket
+                    if (!doc.defaultHargaTiketBerangkat && doc.items?.[0]?.hargaTiket) {
+                        doc.defaultHargaTiketBerangkat = doc.items[0].hargaTiket;
+                        doc.defaultHargaTiketPulang = doc.items[0].hargaTiket;
+                        doc.items.forEach(i => {
+                            i.hargaTiketBerangkat = i.hargaTiket || 0;
+                            i.jmlTiketBerangkat = i.jmlTiket || 1;
+                            i.hargaTiketPulang = i.hargaTiket || 0;
+                            i.jmlTiketPulang = i.jmlTiket || 1;
+                        });
+                    }
+                    if (!doc.defaultHargaTaksi && doc.items?.[0]?.biayaTaksi) {
+                        doc.defaultHargaTaksi = doc.items[0].biayaTaksi;
+                        doc.items.forEach(i => i.jmlTaksi = 1);
+                    }
+                    if (!doc.defaultHargaHotel && doc.items?.[0]?.hargaHotel) {
+                        doc.defaultHargaHotel = doc.items[0].hargaHotel;
+                    }
+
+                    // Sinkronisasi data lama: pindahkan ST info ke root jika kosong
+                    if (!doc.noSuratTugas && doc.items?.[0]?.noSuratTugas) {
+                        doc.noSuratTugas = doc.items[0].noSuratTugas;
+                        doc.tglSuratTugas = doc.items[0].tglSuratTugas;
+                    }
+
+                    // Inisialisasi struktur data peserta agar checklist muncul
+                    if (doc.items && Array.isArray(doc.items)) {
+                            // Pastikan setiap key per-person di-init agar reaktif
+                        doc.items.forEach(item => {
+                            item.isManual = false;
+                            // Pastikan objek kelengkapan ada
+                            if (!item.kelengkapan) item.kelengkapan = {};
+                            // Pastikan detailHotel, detailTiketBerangkat, detailTiketPulang ada
+                            if (!item.detailHotel) item.detailHotel = {};
+                            if (!item.detailTiketBerangkat) item.detailTiketBerangkat = {};
+                            if (!item.detailTiketPulang) item.detailTiketPulang = {};
+
+                            // Sinkronisasi nama dengan master list untuk mencegah reset dropdown
+                            if (item.uraian && this.pegawaiList.length > 0) {
+                                const match = this.pegawaiList.find(p => p.nama.toLowerCase() === item.uraian.trim().toLowerCase());
+                                if (match) item.uraian = match.nama;
+                            }
+                            
+                            // Inisialisasi setiap item checklist per orang agar Alpine.js bisa mendeteksi perubahannya
+                            this.checklistItems.filter(ci => ci.isPerPerson).forEach(ci => {
+                                if (item.kelengkapan[ci.id] === undefined) {
+                                    item.kelengkapan[ci.id] = null;
+                                }
+                            });
+                        });
+                    }
+
+                    
+                    // Pastikan semua key kelengkapan tersedia (untuk kompatibilitas data lama)
+                    // Pastikan kelengkapan global juga tersedia
+                    if (!doc.kelengkapan) doc.kelengkapan = {};
+                    this.checklistItems.forEach(item => {
+                        // Hanya inisialisasi ke null jika undefined agar reaktif, tanpa mengubah pilihan user
+                        if (!item.isPerPerson && doc.kelengkapan[item.id] === undefined) {
+                            doc.kelengkapan[item.id] = null;
+                        }
+                    });
+
+                    this.editIndex = this.documents.findIndex(d => d.id === doc.id);
+                    if (this.editIndex === -1) this.editIndex = this.documents.indexOf(docItem);
+                    
+                    this.formData = doc;
+                    this.view = 'form';
+                },
+
+                getStats() {
+                    const results = {
+                        monthly: {},
+                        quarterly: {},
+                        semester: {},
+                        masaSidang: {},
+                        yearly: {}
+                    };
+
+                    this.documents.forEach(doc => {
+                        const date = new Date(doc.tanggalPengajuan);
+                        const year = date.getFullYear();
+                        const month = date.getMonth();
+                        const monthName = date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+                        const jk = doc.jenisKegiatan;
+                        if (!jk || jk === '-') return; // Jangan hitung jika kosong atau tanda (-)
+
+                        const update = (cat, name) => {
+                            if (!results[cat][name]) results[cat][name] = {};
+                            if (!results[cat][name][jk]) results[cat][name][jk] = { count: 0, events: [] };
+                            results[cat][name][jk].count++;
+                            results[cat][name][jk].events.push(doc.acara || '-');
+                        };
+
+                        update('monthly', monthName);
+                        
+                        const q = Math.floor(month / 3) + 1;
+                        update('quarterly', `Triwulan ${q} - ${year}`);
+
+                        const s = month < 6 ? 1 : 2;
+                        update('semester', `Semester ${s} - ${year}`);
+
+                        // Masa Sidang (I: Jan-Apr, II: Mei-Agt, III: Sep-Des)
+                        let ms = 1;
+                        if (month >= 4 && month <= 7) ms = 2;
+                        else if (month >= 8) ms = 3;
+                        update('masaSidang', `Masa Sidang ${ms} - ${year}`);
+
+                        update('yearly', `Tahun ${year}`);
+                    });
+
+                    // Urutkan key secara descending (terbaru di atas)
+                    Object.keys(results).forEach(cat => {
+                        results[cat] = Object.keys(results[cat])
+                            .sort()
+                            .reverse()
+                            .reduce((obj, key) => { obj[key] = results[cat][key]; return obj; }, {});
+                    });
+
+                    return results;
+                },
+
+                getStatColTotal(groupKey, jk) {
+                    const stats = this.getStats()[groupKey];
+                    return Object.values(stats).reduce((sum, data) => sum + (data[jk]?.count || 0), 0);
+                },
+
+                getStatGrandTotal(groupKey) {
+                    const stats = this.getStats()[groupKey];
+                    return Object.values(stats).reduce((sum, data) => {
+                        return sum + Object.values(data).reduce((rowSum, val) => rowSum + (val.count || 0), 0);
+                    }, 0);
+                },
+
+                getGroupedDocs() {
+                    const groups = {};
+                    const sortedList = [...this.documents].sort((a, b) => {
+                        let valA = a[this.sortKey] || '';
+                        let valB = b[this.sortKey] || '';
+
+                        if (this.sortKey === 'totalKeseluruhan') {
+                            valA = Number(valA);
+                            valB = Number(valB);
+                        }
+
+                        if (valA < valB) return this.sortDir === 'asc' ? -1 : 1;
+                        if (valA > valB) return this.sortDir === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                    
+                    sortedList.forEach(doc => {
+                        const date = new Date(doc.tanggalPengajuan);
+                        const monthName = date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+                        if (!groups[monthName]) {
+                            groups[monthName] = { name: monthName, docs: [], total: 0, subs: {}, time: date.getTime() };
+                        }
+                        groups[monthName].docs.push(doc);
+                        groups[monthName].total += (doc.totalKeseluruhan || 0);
+                        
+                        const sub = doc.subKegiatan || 'Tanpa Sub Kegiatan';
+                        if (!groups[monthName].subs[sub]) groups[monthName].subs[sub] = { count: 0, total: 0 };
+                        groups[monthName].subs[sub].count++;
+                        groups[monthName].subs[sub].total += (doc.totalKeseluruhan || 0);
+                    });
+                    return Object.values(groups).sort((a, b) => b.time - a.time).slice(0, this.displayLimit);
+                },
+
+                sortBy(key) {
+                    if (this.sortKey === key) {
+                        this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortKey = key;
+                        this.sortDir = 'asc';
+                    }
+                },
+
+                formatCurrency(val) {
+                    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val || 0);
+                },
+
+                formatDate(dateStr) {
+                    if (!dateStr) return '';
+                    return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                },
+
+                backupData() {
+                    const dataToBackup = {
+                        documents: this.documents,
+                        pegawai: this.pegawaiList,
+                        exportDate: new Date().toISOString()
+                    };
+                    const dataStr = JSON.stringify(dataToBackup, null, 2);
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `backup_full_si_${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                },
+
+                async restoreData(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            const imported = JSON.parse(e.target.result);
+                            let docs = [];
+                            let peg = [];
+                            
+                            if (Array.isArray(imported)) {
+                                docs = imported;
+                            } else if (imported && (imported.documents || imported.pegawai)) {
+                                docs = imported.documents || [];
+                                peg = imported.pegawai || [];
+                            } else {
+                                alert('Format file backup tidak dikenali.');
+                                return;
+                            }
+
+                            if (confirm(`Pulihkan ${docs.length} dokumen dan ${peg.length} data pegawai? Data akan digabungkan dengan data saat ini.`)) {
+                                for (let d of docs) {
+                                    if (!d.id) d.id = Date.now() + Math.random();
+                                    await dbProvider.save('docs', d);
+                                }
+                                for (let p of peg) {
+                                    if (!p.id) p.id = Date.now() + Math.random();
+                                    await dbProvider.save('pegawai', p);
+                                }
+                                this.documents = [...docs, ...this.documents];
+                                this.pegawaiList = [...peg, ...this.pegawaiList];
+                                alert('Pemulihan data berhasil!');
+                            }
+                        } catch (err) {
+                            alert('Gagal memproses file backup: ' + err.message);
+                        }
+                        event.target.value = '';
+                    };
+                    reader.readAsText(file);
+                }
             }
         }
     </script>
